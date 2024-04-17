@@ -14,3 +14,13 @@ def hkdf25519(key_material):
     )
 
     return hkdf.derive(F_25519 + key_material)
+
+def hkdf25519_64(key_material):
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=64,
+        salt=salt_25519,
+        info=info
+    )
+
+    return hkdf.derive(F_25519 + key_material)
