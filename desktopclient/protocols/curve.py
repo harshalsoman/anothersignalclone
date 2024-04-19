@@ -124,7 +124,7 @@ class Curve448(SecureEllipticCurve):
         q = 2 ** 446 - 13818066809895115352007386748515426880336692474882178609894547503885
         d = 611975850744529176160423220965553317543219696871016626328968936415087860042636474891785599283666020414768678979989378147065462815545017
         a24 = 39081
-        key_len = 112
+        key_len = 56
         self.base = self.x448_base = binascii.unhexlify(
             b'0500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000')
         super().__init__(base_u, p, q, d, mod_p, a24, key_len)
@@ -151,4 +151,4 @@ class Curve448(SecureEllipticCurve):
         return encoded_public_key[1:]
 
     def diffie_hellman(self, private_key, public_key):
-        return self.x25519(private_key, public_key)
+        return self.x448(private_key, public_key)
