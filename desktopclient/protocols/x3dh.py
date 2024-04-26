@@ -55,7 +55,7 @@ class X3DH25519:
         my_spk_pub = X3DH25519.curve25519.get_public_key(my_spk)
         my_otpk_pub = X3DH25519.curve25519.get_public_key(my_otpk)
 
-        my_spk_sig = X3DH25519.xed25519.sign(my_id, my_spk_pub, b'\xff')
+        my_spk_sig = X3DH25519.xed25519.sign(my_id, my_spk_pub)
         my_spk_pub_enc = X3DH25519.xed25519.encode(my_spk_pub)
 
         return (my_id_pub, my_spk_pub_enc, my_spk_sig, my_otpk_pub)

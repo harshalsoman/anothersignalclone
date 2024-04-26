@@ -2,7 +2,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 F_25519 = b'\xff' * 32
-salt_25519 = b'\0' * 32
+salt_25519 = b'\x00' * 32
 info = b'Yet Another Signal Clone'
 
 def hkdf25519(key_material):

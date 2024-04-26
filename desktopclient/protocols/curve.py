@@ -268,7 +268,8 @@ class XEd25519(Ed25519):
     def hash(self, i, X):
         return hashlib.sha512(int.to_bytes(pow(2, 256) - 1 - i, self.key_len, "little") + X).digest()
 
-    def sign(self, k, M, Z):
+    def sign(self, k, M):
+        Z = os.urandom(64)
         A, a = self.calculate_key_pair(self._decode_scalar_x25519(k))
         r = int.from_bytes(self.hash(1, int.to_bytes(a, self.key_len, "little") + M + Z), "little") % self.q
         R = self.point_compress(self.point_mul(r, self.G))
