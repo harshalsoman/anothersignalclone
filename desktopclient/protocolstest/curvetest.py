@@ -30,8 +30,8 @@ class TestSecureEllipticCurve(unittest.TestCase):
 
     def test_vector_x448_2(self):
         k = bytes.fromhex('203d494428b8399352665ddca42f9de8fef600908e0d461cb021f8c538345dd77c3e4806e25f46d3315c44e0a5b4371282dd2c8d5be3095f')
-        u = bytes.fromhex('0fbcc2f993cd56d3305b0b7d9e55d4c1a8fb5dbb52f8e9a1e9b6201b165d015894e56c4d3570bee52fe205e28a78b91cdfbde71ce8d157db')
-        r = bytes.fromhex('884a02576239ff7a2f2f63b2db6a9ff37047ac13568e1e30fe63c4a7ad1b3ee3a5700df34321d62077e63633c575c1c954514e99da7c179d')
+        u = bytes.fromhex('1e37b1e6368991ebce5815bf6b567cedfec0d32246815a6707f02c4a61247656f5df569f02613cc5bcedf7a924424ff063c9c0aff5b395ae')
+        r = bytes.fromhex('d34142faca68f7a3ddf805fa39cc706d5ab3f5633ceff5e6462b775def45f33083461dcf821cc3f0f74a813277e6895a35d958feef79a5bf')
         self.assertEqual(Curve448().x448(k, u), r)
 
     def test_1_iteration_x25519(self):

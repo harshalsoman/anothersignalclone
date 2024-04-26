@@ -3,9 +3,8 @@ import json
 import os
 
 from protocols.aead import encrypt_with_auth, decrypt_with_auth
-from protocols.curve import Curve25519
+from protocols.curve import Curve25519, XEd25519
 from protocols.hkdf import hkdf25519
-from protocols.xeddsa import XEd25519
 
 
 class X3DH25519:
