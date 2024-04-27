@@ -89,16 +89,10 @@ class Curve25519:
         return self._encode_u_coordinate(int(res))
 
     def get_public_key(self, private_key):
-        return self.x25519(private_key, self.base)
-
-    def encode(self, public_key):
-        return b'\x01' + public_key
-
-    def decode(self, encoded_public_key):
-        return encoded_public_key[1:]
+        return bytes(self.x25519(private_key, self.base))
 
     def diffie_hellman(self, private_key, public_key):
-        return self.x25519(private_key, public_key)
+        return self.x25519(private_key, bytearray(public_key))
 
 
 class Ed25519(Curve25519):
