@@ -1,5 +1,4 @@
 import os
-
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -7,6 +6,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from protocols.curve import Curve25519, XEd25519
+import pickle
 
 F_25519 = b'\xff' * 32
 SALT_25519 = b'\x00' * 32
@@ -124,10 +124,89 @@ def __x3dh_w_header__(key_bundle_pair, header, cipher):
     msg = __decrypt__(sk, cipher, header)
     return (sk, msg)
 
+class KeyStore:
+    def __init__(self):
+        self.ltk = __generate_dh__()
+        self.spk = __generate_dh__()
+        self.otpk = [__generate_dh__() for i in range(10)]
+
+    def get_key_bundle(self):
+        (_, ltk_pk) = self.ltk
+        (_, spk_pk) = self.spk
+        otpks = [k[1] for k in self.otpk] if len(self.otpk) != 0 else None
+        return ltk_pk, spk_pk, otpks
+
+    def sign_spk(self):
+        (ltk_sk, _) = self.ltk
+        (_, spk_pk) = self.spk
+        return xeddsa.sign(ltk_sk, spk_pk)
+
+    def del_optk(self, optk_pub):
+        for pair in self.otpk:
+            (_, otpk_pk) = pair
+            if otpk_pk == optk_pub:
+                self.otpk.remove(pair)
+                break
+
+    def fetch_otpk_sk(self, optk_pub):
+        for pair in self.otpk:
+            (otpk_sk, otpk_pk) = pair
+            if otpk_pk == optk_pub:
+                return pair
+
+    def x3dh_w_key_bundle(self, msg, key_bundle):
+        (id_pub, spk_pub, spk_sig, otpk_pub) = key_bundle
+
+        assert xeddsa.verify(id_pub, spk_pub, spk_sig)
+        (ep_pr, ep_pk) = __generate_dh__()
+
+        dh1 = __diffie_hellman__(self.ltk, spk_pub)
+        dh2 = __diffie_hellman__((ep_pr, ep_pk), id_pub)
+        dh3 = __diffie_hellman__((ep_pr, ep_pk), spk_pub)
+
+        (_, id_pk) = self.ltk
+        ratchet_pair = __generate_dh__()
+        (_, rathet_pk) = ratchet_pair
+
+        header = os.urandom(32) + id_pk + ep_pk + rathet_pk
+        if otpk_pub is None:
+            sk = __hkdf__(dh1 + dh2 + dh3)
+        else:
+            dh4 = __diffie_hellman__((ep_pr, ep_pk), otpk_pub)
+            sk = __hkdf__(dh1 + dh2 + dh3 + dh4)
+            header = header + otpk_pk
+
+        cipher = __encrypt__(sk, msg, header)
+        return (sk, header, cipher, ratchet_pair)
+
+    def x3dh_w_header(self, header, cipher):
+
+        id_pub = header[32:64]
+        ep_pub = header[64:96]
+        ratchet_pk = header[96:128]
+
+        dh1 = __diffie_hellman__(self.spk, id_pub)
+        dh2 = __diffie_hellman__(self.ltk, ep_pub)
+        dh3 = __diffie_hellman__(self.spk, ep_pub)
+
+        if len(header) > 128:
+            otpk_pk = header[128:]
+            (otpk_sk, _) = self.fetch_otpk_sk(otpk_pk)
+            dh4 = __diffie_hellman__((otpk_sk, otpk_pk), ep_pub)
+            sk = __hkdf__(dh1 + dh2 + dh3 + dh4)
+            self.del_optk(otpk_pk)
+        else:
+            sk = __hkdf__(dh1 + dh2 + dh3)
+
+        msg = __decrypt__(sk, cipher, header)
+        return (sk, msg, ratchet_pk)
+
+
 class Ratchet:
-    def __init__(self, sk, dh_key_pair=None, dh_pub_key=None):
+    def __init__(self, sk, dh_key_pair=None, dh_pub_key=None, ck_sdr = None, ck_rcv = None, n_sdr = 0, n_rcv = 0, pn = 0, mk_skipped=None):
         self.rk = sk
-        self.ck_sdr = None
+        if mk_skipped is None:
+            self.mk_skipped = {}
         if dh_key_pair is not None:
             self.dh_sdr = dh_key_pair
         else:
@@ -137,11 +216,18 @@ class Ratchet:
             (self.rk, self.ck_sdr) = __kdf_rk__(sk, __diffie_hellman__(self.dh_sdr, self.dh_rcv))
         else:
             self.dh_rcv = None
-        self.ck_rcv = None
-        self.n_sdr = 0
-        self.n_rcv = 0
-        self.pn = 0
-        self.mk_skipped = {}
+        if ck_sdr is not None:
+            self.rk = sk
+            self.ck_sdr = ck_sdr
+        self.ck_rcv = ck_rcv
+        self.n_sdr = n_sdr
+        self.n_rcv = n_rcv
+        self.pn = pn
+
+
+    def get_public_key(self):
+        (_, dh_pub) = self.dh_sdr
+        return dh_pub
 
     def encrypt(self, msg):
         self.ck_sdr, mk = __kdf_ck__(self.ck_sdr)
@@ -196,7 +282,7 @@ class Ratchet:
         self.dh_sdr = __generate_dh__()
         self.rk, self.ck_sdr = __kdf_rk__(self.rk, __diffie_hellman__(self.dh_sdr, self.dh_rcv))
 
-if __name__ == '__main__':
+if __name__ == '__main__x':
     (id_sk, id_pk) = __generate_dh__()
 
     (id2_sk, id2_pk) = __generate_dh__()
@@ -222,8 +308,55 @@ if __name__ == '__main__':
     header5, cipher5 = alice.encrypt('Hey Bob, how are you?')
 
     print('Alice> ', bob.decrypt(header5, cipher5))
-    print('Alice> ', bob.decrypt(header3, cipher3))
-    print('Alice> ', bob.decrypt(header2, cipher2))
-    print('Alice> ', bob.decrypt(header4, cipher4))
-    print('Alice> ', bob.decrypt(header1, cipher1))
+
+    header6, cipher6 = bob.encrypt('Hey Alice, nice seeing you out here!')
+
+
+    print('Bob> ', alice.decrypt(header6, cipher6))
+    # print(bob.export_context())
+    # bob_copy = Ratchet.load_context(bob.export_context())
+    saved = open('../self.ratchet.dat', 'wb')
+    pickle.dump(bob, saved)
+    saved.close()
+
+    saved = open('../self.ratchet.dat', 'rb')
+    bob_copy = pickle.load(saved)
+    saved.close()
+
+    os.remove('../self.ratchet.dat')
+
+    print('Alice> ', bob_copy.decrypt(header3, cipher3))
+    print('Alice> ', bob_copy.decrypt(header2, cipher2))
+    print('Alice> ', bob_copy.decrypt(header4, cipher4))
+    print('Alice> ', bob_copy.decrypt(header1, cipher1))
+
+
+if __name__ == '__main__':
+    bob = KeyStore()
+
+    ltk_pk, spk_pk, otpks = bob.get_key_bundle()
+    spk_sig = bob.sign_spk()
+
+    alice = KeyStore()
+
+    otpk_pk = otpks[0] if len(otpks) else None
+    (sk_alice, header, cipher, ratchet_pair) = alice.x3dh_w_key_bundle('alice requesting permission to chat', (ltk_pk, spk_pk, spk_sig, otpk_pk))
+    alice = Ratchet(sk_alice, ratchet_pair)
+
+    (sk_bob, msg, ratchet_pub) = bob.x3dh_w_header(header, cipher)
+    print('Alice> ', msg)
+    bob = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
+    hdr1, cph1 = bob.encrypt('bob accepted your request to chat')
+
+    print('Bob> ', alice.decrypt(hdr1, cph1))
+    hdr2, cph2 = alice.encrypt('Hey Bob, what up?')
+    hdr3, cph3 = alice.encrypt("I'm in town for a while, we should meet up")
+    hdr4, cph4 = alice.encrypt("Do you remember the old park, let's meet there")
+
+    print('Alice> ', bob.decrypt(hdr4, cph4))
+    print('Alice> ', bob.decrypt(hdr2, cph2))
+    print('Alice> ', bob.decrypt(hdr3, cph3))
+
+
+
 
