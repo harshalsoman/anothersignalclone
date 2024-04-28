@@ -1,6 +1,7 @@
 from _thread import *
 import sys, os, socket
 import os
+import traceback
 
 import datastore
 import transport
@@ -8,11 +9,12 @@ import transport
 sessions = {}
 
 
-def client_handler(client):
+def client_handler(client, addr):
     username = None
     connection = datastore.get_connection()
     try:
         msg_type = client.recv(8)
+        print(msg_type)
 
         if msg_type == transport.REGISTRATION:
             username, password = transport.fetch_user_creds(client)
@@ -79,7 +81,8 @@ def client_handler(client):
                     userlst.append(user[0])
                 transport.share_contacts()
 
-    except:
+    except Exception as e:
+        print(traceback.format_exception(e))
         datastore.close_connection(connection)
         if username is not None:
             sessions.pop(username)
@@ -100,12 +103,13 @@ if __name__ == "__main__":
     server.bind(('127.0.0.1', 8000))
     server.listen(50)
     print('Relay server up and running...')
+
     while True:
         try:
-            client, _ = server.accept()
+            client, addr = server.accept()
             if client:
                 print('Connected')
-                start_new_thread(client_handler, (client))
+                start_new_thread(client_handler, (client, addr))
 
         except KeyboardInterrupt:
             print('Shutting down...')
