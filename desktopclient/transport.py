@@ -45,6 +45,11 @@ def receive_key_bundle(server):
     return server.recv(1024)
 
 
+def upload_key_bundle(server, key_bundle):
+    server.send(UPLOADBUNDLE)
+    server.send(int.to_bytes(len(key_bundle), 8, "little"))
+    server.send(key_bundle)
+
 def send_user_credentials(server, username, password):
     userpass = pad_str(username.encode()) + pad_str(password.encode())
     server.send(userpass)
