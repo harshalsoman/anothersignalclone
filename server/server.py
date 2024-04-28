@@ -8,8 +8,9 @@ import transport
 sessions = {}
 
 
-def client_handler(client, connection):
+def client_handler(client):
     username = None
+    connection = datastore.get_connection()
     try:
         msg_type = client.recv(8)
 
@@ -79,6 +80,7 @@ def client_handler(client, connection):
                 transport.share_contacts()
 
     except:
+        datastore.close_connection(connection)
         if username is not None:
             sessions.pop(username)
             for session in sessions:
@@ -98,14 +100,12 @@ if __name__ == "__main__":
     server.bind(('127.0.0.1', 8000))
     server.listen(50)
     print('Relay server up and running...')
-
-    connection = datastore.get_connection()
     while True:
         try:
             client, _ = server.accept()
             if client:
                 print('Connected')
-                start_new_thread(client_handler, (client, connection))
+                start_new_thread(client_handler, (client))
 
         except KeyboardInterrupt:
             print('Shutting down...')
