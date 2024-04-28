@@ -40,8 +40,10 @@ def send_online_users(client, users):
     client.send(int.to_bytes(len(users), 8, "little"))
     client.send(users)
 
-def receive_key_bundle():
-    print()
+def receive_key_bundle(client):
+    key_bundle_len = int.from_bytes(client.recv(8), "little")
+    key_bundle = client.recv(key_bundle_len)
+    return key_bundle
 
 
 def share_key_bundle(client, key_bundle):
