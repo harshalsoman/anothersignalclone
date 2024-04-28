@@ -46,7 +46,6 @@ def receive_key_bundle(server):
 
 
 def upload_key_bundle(server, key_bundle):
-    server.send(UPLOADBUNDLE)
     server.send(int.to_bytes(len(key_bundle), 8, "little"))
     server.send(key_bundle)
 
