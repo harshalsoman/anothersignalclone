@@ -1,6 +1,7 @@
 import os
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+import hashlib
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -184,7 +185,15 @@ class Ratchet:
         self.n_sdr = n_sdr
         self.n_rcv = n_rcv
         self.pn = pn
+        self.safety_number = None
 
+    def get_safety_number(self):
+        return self.safety_number
+
+    def __derive_safety_number__(self):
+        common = int.from_bytes(self.dh_sdr[1]) ^ int.from_bytes(self.dh_rcv)
+        sn = int.from_bytes(hashlib.shake_256(int.to_bytes(common, 32)).digest(6))
+        return "{:02X}".format(sn)
 
     def get_public_key(self):
         (_, dh_pub) = self.dh_sdr
@@ -194,6 +203,7 @@ class Ratchet:
         self.ck_sdr, mk = __kdf_ck__(self.ck_sdr)
         header = os.urandom(32) + __header__(self.dh_sdr, self.pn, self.n_sdr)
         self.n_sdr += 1
+        self.safety_number = self.__derive_safety_number__()
         return header, __encrypt__(mk, msg, header)
 
     def decrypt(self, header, cipher):
@@ -240,6 +250,7 @@ class Ratchet:
         self.n_rcv = 0
         self.dh_rcv = header_dh
         self.rk, self.ck_rcv = __kdf_rk__(self.rk, __diffie_hellman__(self.dh_sdr, self.dh_rcv))
+        self.safety_number = self.__derive_safety_number__()
         self.dh_sdr = __generate_dh__()
         self.rk, self.ck_sdr = __kdf_rk__(self.rk, __diffie_hellman__(self.dh_sdr, self.dh_rcv))
 
@@ -259,17 +270,21 @@ if __name__ == '__main__':
     (sk_bob, msg, ratchet_pub) = bob.x3dh_w_header(header, cipher)
     print('Alice> ', msg)
     bob = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
+
     hdr1, cph1 = bob.encrypt('bob accepted your request to chat')
+
+
 
     print('Bob> ', alice.decrypt(hdr1, cph1))
     hdr2, cph2 = alice.encrypt('Hey Bob, what up?')
     hdr3, cph3 = alice.encrypt("I'm in town for a while, we should meet up")
     hdr4, cph4 = alice.encrypt("Do you remember the old park, let's meet there")
 
-    print('Alice> ', bob.decrypt(hdr4, cph4))
+    #
     print('Alice> ', bob.decrypt(hdr2, cph2))
     print('Alice> ', bob.decrypt(hdr3, cph3))
+    print('Alice> ', bob.decrypt(hdr4, cph4))
 
-
-
+    print(bob.safety_number)
+    print(alice.safety_number)
 
