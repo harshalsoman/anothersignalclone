@@ -7,7 +7,7 @@ def init_datastore():
     try:
         connection.execute('create table keybundle( user TEXT, keys BLOB);')
         connection.execute('create table messages(sender TEXT,receiver TEXT,message BLOB,timestamp INTEGER);')
-        connection.execute('create table users(username,password);')
+        connection.execute('create table users(username TEXT,password TEXT);')
         connection.commit()
     finally:
         close_connection(connection)
