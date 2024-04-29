@@ -35,7 +35,7 @@ def register(connection, username, password):
     try:
         cursor = connection.cursor()
         query = "SELECT 1 FROM users WHERE username = ?"
-        cursor.execute(query, (username))
+        cursor.execute(query, (username,))
         result = cursor.fetchone()
 
         if result:
@@ -113,7 +113,7 @@ def fetch_key_bundle(connection, user):
     try:
         cursor = connection.cursor()
         query = "SELECT keys from keybundle WHERE user = ?"
-        cursor.execute(query, (user))
+        cursor.execute(query, (user,))
         result = cursor.fetchall()
         cursor.close()
         return result
@@ -127,15 +127,18 @@ def close_connection(connection):
     if connection is not None:
         connection.close()
 
+#
+# if __name__ == '__main__':
+#     c = get_connection()
+#     cursor = c.cursor()
+#     query = "SELECT username, password FROM users"
+#     cursor.execute(query)
+#     r = cursor.fetchall()
+#     cursor.close()
+#     for u in r:
+#         print(u[0])
+#         print(u[1])
+#     close_connection(c)
 
 if __name__ == '__main__':
-    c = get_connection()
-    cursor = c.cursor()
-    query = "SELECT username, password FROM users"
-    cursor.execute(query)
-    r = cursor.fetchall()
-    cursor.close()
-    for u in r:
-        print(u[0])
-        print(u[1])
-    close_connection(c)
+    init_datastore()

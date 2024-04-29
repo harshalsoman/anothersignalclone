@@ -21,7 +21,7 @@ def client_handler(client, addr):
             datastore.register(connection, username, password)
             client.send(transport.SUCCESS)
 
-            key_bundle = transport.receive_key_bundle()
+            key_bundle = transport.receive_key_bundle(client)
             datastore.store_key_bundle(connection, username, key_bundle)
             client.close()
             sys.exit()
@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    server.bind(('127.0.0.1', 8000))
+    server.bind(('127.0.0.1', 9000))
     server.listen(50)
     print('Relay server up and running...')
 
