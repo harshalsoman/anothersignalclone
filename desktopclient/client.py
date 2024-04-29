@@ -2,6 +2,7 @@ import time
 import sys
 import socket  # Importing the socket module
 import tkinter  # The python gui interface for Tk gui extension we 're using
+import traceback
 from tkinter import ttk  # Module providing access to the Tk themed widget set
 import tkinter.messagebox
 import tkinter.font
@@ -9,10 +10,12 @@ import tkinter.filedialog
 from PIL import ImageTk, Image  # Importing the Python Imaging Library (Pillow)
 import threading  # Module for high-level threading api in python
 import base64  # Module for accessing base64 encoding features
-from DoubleRachet import KeyStore, Ratchet
+from protocols.double_ratchet import KeyStore, Ratchet
 import os
 import pickle
 import transport
+import websockets.sync.client
+import requests
 
 # Every ttk object (representing a gui object..sort of) in the class has a style object associated with it for formatting, styling and beautification
 # Entries are objects which appear like text boxes and we can take entries inside them,
@@ -46,19 +49,19 @@ class Application(tkinter.Tk):
 
     def launch_app(self):
         # default function always run to generate the main
-        pickle_file_path = "./store/kb.pkl"  # Update this with your actual pickle file path
+        # pickle_file_path = "./store/kb.pkl"  # Update this with your actual pickle file path
         dat_file_path = "./store/kb.dat"  # Update this with your actual .dat file path
 
         # Ensure directory exists for pickle file
-        pickle_dir = os.path.dirname(pickle_file_path)
-        os.makedirs(pickle_dir, exist_ok=True)
+        # pickle_dir = os.path.dirname(pickle_file_path)
+        # os.makedirs(pickle_dir, exist_ok=True)
 
         # Ensure directory exists for .dat file
         dat_dir = os.path.dirname(dat_file_path)
         os.makedirs(dat_dir, exist_ok=True)
 
-        if os.path.exists(pickle_file_path):
-            with open(pickle_file_path, 'rb') as file:
+        if os.path.exists(dat_file_path):
+            with open(dat_file_path, 'rb') as file:
                 self.bob = pickle.load(file)
                 # Add your code to process the unpickled data here
                 print("Pickle file exists. Unpickled data:", self.bob)
@@ -159,23 +162,14 @@ class Application(tkinter.Tk):
         self.register_btn.destroy()
         self.frame.pack_forget()
 
-        # creating socket for client and connecting with it the socket using the host IP and the host port
-
-        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
         try:
-            self.conn.connect((self.host, self.port))  # Connected with the host at port number 'port'
-        except:
-            self.reg_menu()  # create the previous window again since the connection was not successful
-
-        try:
-            self.conn.send(transport.REGISTRATION)
-            transport.send_user_credentials(self.conn, self.username, self.password)
-            var = self.conn.recv(8)
-            if var == transport.SUCCESS:
+            var = requests.post('http://127.0.0.1:8000/registration',
+                                data='username=' + self.username + '&password=' + self.password,
+                                headers={'Content-Type': 'application/x-www-form-urlencoded'})
+            var = var.status_code
+            if var == 201:
                 print("Success")
                 self.bob = KeyStore()
-
                 ltk_pk, spk_pk, otpks = self.bob.get_key_bundle()
                 spk_sig = self.bob.sign_spk()
                 msg = ltk_pk + spk_pk + spk_sig
@@ -183,29 +177,36 @@ class Application(tkinter.Tk):
                 for byte in otpks:
                     b += byte
                 msg += b
-                transport.upload_key_bundle(self.conn, msg)
+                var = requests.post('http://127.0.0.1:8000/keybundle/' + self.username,
+                                    json={
+                                        "key_bundle": base64.encodebytes(msg).decode()
+                                    },
+                                    headers={'Content-Type': 'application/json'})
+                if var.status_code != 201:
+                    self.reg_menu()
             else:
                 print("Failure")
+                self.reg_menu()
 
             # self.conn.send(str.encode(self.username + ' ' + self.password)) #Sending username and password for storing in the database
         except Exception as e:
-            print('Error')
-            print(e)
+            print(traceback.format_exc())
             self.reg_menu()  # Failing to send the username and password
 
-        conf = self.conn.recv(4096).decode('utf-8')
-        if (conf == "Error"):
-
-            self.un_error = ttk.Label(self.frame, text='Username already used', anchor=tkinter.CENTER,
-                                      justify=tkinter.CENTER)
-            self.try_again2 = ttk.Button(self.frame, text='Try again', command=self.reg_menu)
-            self.un_error.grid(row=0, column=1, pady=10, padx=5)
-            self.try_again2.grid(row=1, column=1, pady=10, padx=5)
-            self.try_again_bool2 = True
-            self.frame.pack(fill=tkinter.BOTH, expand=True)
-
-        else:
-            self.client_menu()
+        # conf = self.conn.recv()
+        # if (conf == "500"):
+        #
+        #     self.un_error = ttk.Label(self.frame, text='Username already used', anchor=tkinter.CENTER,
+        #                               justify=tkinter.CENTER)
+        #     self.try_again2 = ttk.Button(self.frame, text='Try again', command=self.reg_menu)
+        #     self.un_error.grid(row=0, column=1, pady=10, padx=5)
+        #     self.try_again2.grid(row=1, column=1, pady=10, padx=5)
+        #     self.try_again_bool2 = True
+        #     self.frame.pack(fill=tkinter.BOTH, expand=True)
+        #
+        # else:
+        #     self.client_menu()
+        self.client_menu()
 
     # The Log in menu
     def client_menu(self):
@@ -258,7 +259,6 @@ class Application(tkinter.Tk):
         self.port = 9000
         self.name = self.name_entry.get()
         self.pwd = self.pwd_entry.get()
-        print(self.host, self.port)
 
         # Destroying the previous labels and entries
         # self.host_entry_label.destroy()
@@ -274,32 +274,55 @@ class Application(tkinter.Tk):
         self.frame.pack_forget()
 
         # creating socket for client
-        self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.conn.settimeout(2);
+        # self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # self.conn.settimeout(2);
         f = 0
-        try:
-            f = self.conn.connect((self.host, self.port))  # Attempting to connect to the server
-            print("Connected")
-        except:
-            print("Failed")
-            self.client_menu()
-            return 0
-        self.conn.send(transport.AUTHENTICATION)
-        transport.send_user_credentials(self.conn, self.name, self.pwd)
-        var = self.conn.recv(8)
-        if var == transport.SUCCESS:
-            print("Success")
+        var = requests.post('http://127.0.0.1:8000/authentication',
+                            data='username=' + self.name + '&password=' + self.pwd,
+                            headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        if var.status_code == 200:
+            print("Successful login")
         else:
-            print("Failure")
+            print("Failure to login")
+            self.launch_client()
         # self.list_of_active_users = self.initial_setup() #Obtaining the list of active users on successful connection to the user
         # if self.list_of_active_users==-1:
         #     return 0
         self.flag = 0
+        self.conn = websockets.sync.client.connect("ws://127.0.0.1:9000")
+        self.conn.send(self.name)
+        print('sent name to server')
 
         # MAIN WINDOW
         self.title('Yet Another Signal Clone')  # Window title
         self.should_quit = False
         self.protocol('WM_DELETE_WINDOW', self.client_quit)
+
+        # FETCH ALL MESSAGES
+        var = requests.get('http://127.0.0.1:8000/messages/' + self.name,
+                           headers={'Content-Type': 'application/json'})
+        print('################################', var.json()['messages'])
+
+        for msg in var.json()['messages']:
+            if msg['type'] == 'x3dh':
+                sender = msg['by']
+                content = base64.decodebytes(msg['content'].encode())
+                (sk_bob, msg, ratchet_pub) = self.bob.x3dh_w_header(content[:128], content[128:])
+                if msg == sender + ' is requesting permission to chat':
+                    print("success")
+                    users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
+                    print('Ratchet created')
+                    self.conn.send(sender)
+                    self.conn.send('msg')
+                    hdr, cph = users[sender].encrypt(self.name + ' has accepted your request to chat')
+                    self.conn.send(hdr)
+                    self.conn.send(cph)
+            else:
+                sender = msg['by']
+                content = base64.decodebytes(msg['content'].encode())
+                if sender not in messages.keys():
+                    messages[sender] = []
+                messages[sender].append(users[sender].decrypt(content[:128], content[128:]))
 
         # STYLISING
         s = ttk.Style()
@@ -394,37 +417,40 @@ class Application(tkinter.Tk):
         #     l.grid(row=j,column=0,sticky=tkinter.W)
         #     self.online.append(l)
         #     j=j+1
+
         # CONTACTS#
+
         self.contact_label = [];
-        with open('textfiles/contact.txt', 'rb') as file:
-            contacts = (file.read()).decode()
-        self.contacts = contacts.split(' ')
-        j = 0
-        if "" in self.contacts:
-            self.contacts.remove("")
-            # Create a tkinter variable to hold the selected contact
-            self.selected_contact = tkinter.StringVar()
+        # with open('textfiles/contact.txt', 'rb') as file:
+        #     contacts = (file.read()).decode()
+        #     print('Contacts: ', contacts)
+        # self.contacts = contacts.split(' ')
+        self.selected_contact = tkinter.StringVar()
 
-            # Create a Combobox to display the contacts
-            self.contact_combobox = ttk.Combobox(self.f2, textvariable=self.selected_contact, font=self.font3,
-                                                 foreground='gray49', background='old lace')
-            self.contact_combobox.grid(row=0, column=0, sticky=tkinter.W)
-            # self.contact_combobox['values'] = self.contacts
+        # Create a Combobox to display the contacts
+        self.contact_combobox = ttk.Combobox(self.f2, textvariable=self.selected_contact, font=self.font3,
+                                             foreground='gray49', background='old lace')
+        self.contact_combobox.grid(row=0, column=0, sticky=tkinter.W)
+        # self.contact_combobox['values'] = self.contacts
 
-            # Check if each contact is online and add '*' if online
-            self.contacts_with_status = []
-            with open('./textfiles/activ.txt', 'rb') as file:
-                active_contacts = file.read().decode().split()
-            for contact in self.contacts:
-                if contact in active_contacts:
-                    self.contacts_with_status.append(contact + " *")
-                else:
-                    self.contacts_with_status.append(contact)
+        var = requests.get('http://127.0.0.1:8000/users',
+                           headers={'Content-Type': 'application/json'})
+        var = var.json()['users']
+        self.contacts = []
+        self.contacts_with_status = []
+        for user in var:
+            if self.name == user['user']:
+                continue
+            self.contacts.append(user['user'])
+            if user['active']:
+                self.contacts_with_status.append(user['user'] + ' *')
+            else:
+                self.contacts_with_status.append(user['user'])
+        self.num_contacts = len(var) - 1
 
-            self.contact_combobox['values'] = self.contacts_with_status
-            # Bind a callback function to handle selection changes
-            self.contact_combobox.bind("<<ComboboxSelected>>", self.handle_contact_selection)
-            self.num_contacts = len(self.contacts)
+        self.contact_combobox['values'] = self.contacts_with_status
+        # Bind a callback function to handle selection changes
+        self.contact_combobox.bind("<<ComboboxSelected>>", self.handle_contact_selection)
 
         # PACKING ABOVE CREATED widgets                      #The order of packing of widgets may be arbitrary to ensure proper layout.
         self.clients_frame.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
@@ -446,17 +472,13 @@ class Application(tkinter.Tk):
 
     def handle_contact_selection(self, event):
         selected_contact = self.selected_contact.get()
-        print("Selected contact:", selected_contact)
-        print(users)
-        if selected_contact in users:
-            rachet = users[selected_contact]
-            msg = self.username + 'Requesting permission to chat'
-            hdr, cipher = rachet.encrypt(msg)
-            self.conn.send(transport.MESSAGEEXCHANGE)
-            transport.send_msg(self.conn, hdr, cipher)
-        else:
-            self.conn.send(transport.DOWNLOADBUNDLE)
-            bundle = transport.receive_key_bundle(self.conn)
+        if '*' in selected_contact:
+            selected_contact = selected_contact[:-2]
+
+        if selected_contact not in users:
+            var = requests.get('http://127.0.0.1:8000/keybundle/' + selected_contact,
+                               headers={'Content-Type': 'application/x-www-form-urlencoded'})
+            bundle = base64.decodebytes(var.json()['key_bundle'].encode())
             ltk = bundle[:32]
             spk = bundle[32:64]
             sig = bundle[64:128]
@@ -469,15 +491,31 @@ class Application(tkinter.Tk):
 
             arr = arr[0] if len(arr) else None
             (sk_alice, header, cipher, ratchet_pair) = self.bob.x3dh_w_key_bundle(
-                self.username + 'Requesting permission to chat',
-                (ltk, spk, sig, arr))
+                self.name + ' is requesting permission to chat', (ltk, spk, sig, arr))
             users[selected_contact] = Ratchet(sk_alice, ratchet_pair)
-            self.conn.send(transport.X3DHINIT)
-            transport.send_msg(self.conn, header, cipher)
-        for key, value in messages.items():
-            if key == selected_contact:
+            print('Ratchet generated')
+            print(users.keys())
+
+            self.conn.send(selected_contact)
+            self.conn.send('x3dh')
+            self.conn.send(header)
+            self.conn.send(cipher)
+            print('sending ratchet message')
+
+            self.chat_text.config(state=tkinter.NORMAL)
+            self.chat_text.insert(tkinter.END,
+                                  'Waiting for ' + selected_contact + 'to accept request to chat...' + '\n',
+                                  ('tag{0}'.format(2)))
+            self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
+                                      font=self.chat_font)
+            self.chat_text.config(state=tkinter.DISABLED)
+            self.chat_text.see(tkinter.END)
+
+        print(messages)
+        if selected_contact in messages:
+            for msg in messages[selected_contact]:
                 self.chat_text.config(state=tkinter.NORMAL)
-                self.chat_text.insert(tkinter.END, value + '\n', ('tag{0}'.format(2)))
+                self.chat_text.insert(tkinter.END, msg + '\n', ('tag{0}'.format(2)))
                 self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
                                           font=self.chat_font)
                 self.chat_text.config(state=tkinter.DISABLED)
@@ -558,6 +596,7 @@ class Application(tkinter.Tk):
         try:
             self.contacts.remove(self.remove1.get())
         except:
+            print(traceback.format_exc())
             tkinter.messagebox.showwarning(title="No Contact", message="No such contact exists")
             self.root.withdraw()
             return
@@ -573,51 +612,41 @@ class Application(tkinter.Tk):
             j = j + 1
         self.num_contacts = j
         remove2 = ' '.join(self.contacts)
-        with open('textfiles/contact.txt', 'wb') as file:
-            file.write(remove2.encode())
+        # with open('textfiles/contact.txt', 'wb') as file:
+        #     file.write(remove2.encode())
         self.root.withdraw()
-
-    # Save History Menu
-    def save_history(self):
-        self.save_file = tkinter.filedialog.asksaveasfilename(title="Choose save location",
-                                                              filetypes=[('Plain text', '*.txt'), ('Any File', '*.*')])
-        try:
-            filehandle = open(self.save_file, "a")
-        except:
-            print("Can't save History")
-            return
-        contents = self.chat_text.get(1.0, tkinter.END);
-        filehandle.write("Last Saved " + time.asctime(time.localtime(time.time())) + '\n')
-        for line in contents:
-            filehandle.write(line)
-        filehandle.close()
 
     # Helper Function for sending messages
     def browse(self):
-        if not self.list_of_active_users:
-            tkinter.messagebox.showwarning(title="No Connection", message="Connect To Some User")
-        else:
-            self.mmfilename = tkinter.filedialog.askopenfilename()
-            self.multimedia_send()
+        self.mmfilename = tkinter.filedialog.askopenfilename()
+        self.multimedia_send()
 
     def send(self, event):
         message = self.chat_entry.get()
-        header, cipher = users[self.selected_contact].encrypt(message)
-        self.conn.send(transport.MESSAGEEXCHANGE)
-        transport.send_msg(self.conn, header, cipher)
-        data = ""
-        for client in self.list_of_active_users:
-            if self.enable[client].get() == 1:
-                data = data + "@" + client + ' '
-        if data == "":
-            tkinter.messagebox.showwarning(title="No Connection", message="Connect To Some User")
-            return
-        data = data + ':'
-        data = data + message
+        contact = self.selected_contact.get()
+        if '*' in contact:
+            contact = contact[:-2]
+        header, cipher = users[contact].encrypt(message)
+
+        print('Sending encrypted message')
+        self.conn.send(contact)
+        self.conn.send('msg')
+        self.conn.send(header)
+        self.conn.send(cipher)
+        print('Sent encrypted message')
+        # data = ""
+        # for client in self.list_of_active_users:
+        #     if self.enable[client].get() == 1:
+        #         data = data + "@" + client + ' '
+        # if data == "":
+        #     tkinter.messagebox.showwarning(title="No Connection", message="Connect To Some User")
+        #     return
+        # data = data + ':'
+        # data = data + message
 
         self.chat_entry.delete(0, tkinter.END)  # Emptying chat entry box
-
-        self.conn.send(data.encode())  # Sending the encoded data to the server
+        #
+        # self.conn.send(data.encode())  # Sending the encoded data to the server
 
         self.chat_text.config(state=tkinter.NORMAL)
         self.chat_text.insert(tkinter.END, self.name + ':' + message + '\n', ('tag{0}'.format(1)))
@@ -646,7 +675,7 @@ class Application(tkinter.Tk):
         # data_to_send = data_to_display + ':' + encoded_string
 
         self.chat_entry.delete(0, tkinter.END)  # Emptying the chat entry box
-        self.conn.send(data_to_send.encode())
+        # self.conn.send(data_to_send.encode())
 
         self.chat_text.config(state=tkinter.NORMAL)
         self.chat_text.insert(tkinter.END, self.name + ':' + filename + '\n', ('tag{0}'.format(1)))
@@ -660,139 +689,75 @@ class Application(tkinter.Tk):
     def clientchat(self):
         while not self.should_quit:  # If we are not in the 'quit' state then do :
             try:
-                msg_type = self.conn.recv(8)
-                rec = transport.get_recipient(self.conn)
-                if msg_type == transport.X3DHINIT:
-                    header, cipher = transport.recv_msg(self.conn, 96)
+
+                sender = self.conn.recv()
+                type = self.conn.recv()
+                print('################# sender type #######################', sender, type)
+
+                if sender == 'server' and type == 'add':
+                    new_contact = self.conn.recv()
+                    if new_contact not in self.contacts:
+                        self.contacts.append(new_contact)
+                    if new_contact + ' *' not in self.contacts_with_status and new_contact in self.contacts_with_status:
+                        self.contacts_with_status.remove(new_contact)
+                        self.contacts_with_status.append(new_contact + ' *')
+                    elif new_contact not in self.contacts_with_status:
+                        self.contacts_with_status.append(new_contact + ' *')
+
+                    self.contact_combobox['values'] = self.contacts_with_status
+
+                elif sender == 'server' and type == 'remove':
+                    new_contact = self.conn.recv()
+                    self.contacts_with_status.remove(new_contact + ' *')
+                    self.contacts_with_status.append(new_contact)
+                    self.contact_combobox['values'] = self.contacts_with_status
+
+                elif type == 'x3dh':
+                    header = self.conn.recv()
+                    cipher = self.conn.recv()
+                    print('############# header cipher #################', header, cipher)
                     (sk_bob, msg, ratchet_pub) = self.bob.x3dh_w_header(header, cipher)
-                    if msg == rec + 'Requesting permission to chat':
+                    if msg == sender + ' is requesting permission to chat':
                         print("success")
-                    msg = users[self.selected_contact]
-                if msg_type == transport.MESSAGEEXCHANGE:
-                    header, cipher = transport.recv_msg(self.conn, 128)
-                    msg = users[self.selected_contact].decrypt(header, cipher)
+                        users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
+                        print('Ratchet created')
 
-                if rec == self.selected_contact:
+                        self.conn.send(sender)
+                        self.conn.send('msg')
+                        hdr, cph = users[sender].encrypt(sender + ' has accepted your request to chat')
+                        self.conn.send(hdr)
+                        self.conn.send(cph)
+                        continue
 
-                    self.chat_text.config(state=tkinter.NORMAL)
-                    self.chat_text.insert(tkinter.END, msg + '\n', ('tag{0}'.format(2)))
-                    self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
-                                              font=self.chat_font)
-                    self.chat_text.config(state=tkinter.DISABLED)
-                    self.chat_text.see(tkinter.END)
                 else:
-                    messages[rec] = msg
-                # data = self.conn.recv(RECV_BUFFER)
-                # data = data.decode()
-                # data = data.rstrip()
+                    header = self.conn.recv()
+                    cipher = self.conn.recv()
+                    print('cipher ', cipher)
+                    print('header ', header)
+                    msg = users[sender].decrypt(header, cipher)
 
-                # if len(data):
-                #     if data[0] == "!":                                             #A list of active users received
-                #         self.list_of_active_users = data[1:].split(' ')
-                #         self.list_of_active_users.remove(self.name)
-                #
-                #         for l in self.online:                                      #Here we update the list of online users visible on client tab
-                #             l.destroy()
-                #
-                #         j=0
-                #         for client in self.list_of_active_users:
-                #             if client not in self.enable:
-                #                 self.enable[client]=tkinter.IntVar()
-                #                 il=ttk.Label(self.f1,padding=10,text=client,justify=tkinter.LEFT,font=self.font3,foreground='forest green',background='navajo white')
-                #                 il.grid(row=j,column=0,sticky=tkinter.W)
-                #                 self.online.append(il)
-                #                 j=j+1
-                #             else :
-                #                 il=ttk.Label(self.f1,padding=10,text=client,justify=tkinter.LEFT,font=self.font3,foreground='forest green',background='navajo white')
-                #                 il.grid(row=j,column=0,sticky=tkinter.W)
-                #                 self.online.append(il)
-                #                 j=j+1
-                #
-                #     elif data[0] == "^":                                            #A multimedia message received
-                #         data_recvd = data.split(':')
-                #         sendername = data_recvd[0][2:]
-                #         filename_process = data_recvd[1].split('/')
-                #         filename = filename_process[len(filename_process) - 1]
-                #         print( sendername)
-                #         print (filename)
-                #         encoded_string = data_recvd[2]
-                #         decoded_string = base64.b64decode(encoded_string)
-                #
-                #         with open(filename, "wb") as file:                         #Creating a file with the same name
-                #             file.write(decoded_string)                             #as send by the user to store the stuff
-                #
-                #         print_data = sendername + ': ' + filename
-                #         self.chat_text.config(state = tkinter.NORMAL)
-                #         self.chat_text.insert(tkinter.END, print_data+'\n',('tag{0}'.format(2)))
-                #         self.chat_text.tag_config('tag{0}'.format(2),justify=tkinter.LEFT,foreground='gray30',font=self.chat_font)
-                #         self.chat_text.config(state = tkinter.DISABLED)
-                #         self.chat_text.see(tkinter.END)
-                #     else:
-                #         self.chat_text.config(state = tkinter.NORMAL)
-                #         self.chat_text.insert(tkinter.END, data[1:]+'\n',('tag{0}'.format(2)))
-                #         self.chat_text.tag_config('tag{0}'.format(2),justify=tkinter.LEFT,foreground='gray30',font=self.chat_font)
-                #         self.chat_text.config(state = tkinter.DISABLED)
-                #         self.chat_text.see(tkinter.END)
-                # else:
-                #     break
-            except:
+                    contact = self.selected_contact.get()
+                    if '*' in contact:
+                        contact = contact[:-2]
+                    print('decrypted message ', msg)
+                    print('sender and contact', sender, contact)
+                    print(sender == contact)
+
+                    if sender == contact:
+                        self.chat_text.config(state=tkinter.NORMAL)
+                        self.chat_text.insert(tkinter.END, msg + '\n', ('tag{0}'.format(2)))
+                        self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
+                                                  font=self.chat_font)
+                        self.chat_text.config(state=tkinter.DISABLED)
+                        self.chat_text.see(tkinter.END)
+                    else:
+                        if sender not in messages.keys():
+                            messages[sender] = []
+                        messages[sender].append(msg)
+
+            except Exception as e:
+                print(traceback.format_exc())
                 continue
-
-    # Helper function for first time communication with server
-    # def initial_setup(self):
-    #     got_list = False                                                         #First time communication with the server
-    #     list_of_active_user = []
-    #     list_active_user=""
-    #
-    #     try:
-    #         self.conn.send('0'.encode())                                         #Sending 0 to indicate that it is a non-registration message
-    #     except:
-    #         self.conn.close()                                                    #Closing the connection and giving an option to reattempt
-    #         self.wp_error = ttk.Label(self.frame, text='Cannot Connect to Server', anchor = tkinter.CENTER,justify = tkinter.CENTER)
-    #         self.try_again = ttk.Button(self.frame, text='Try again', command = self.client_menu)
-    #         self.wp_error.grid(row = 0, column=1, pady=10, padx=5)
-    #         self.try_again.grid(row=0,column=1,pady=10,padx=5)
-    #         self.frame.pack(fill=tkinter.BOTH, expand = True)
-    #
-    #     while 1:
-    #         if not got_list:
-    #             try:
-    #                 data = self.conn.recv(RECV_BUFFER)                              #Obtaining the list of all the active users
-    #                 data = data.decode('utf-8')
-    #                 data = data.rstrip()
-    #             except:
-    #                 self.conn.close()
-    #                 self.client_menu()
-    #
-    #             if data == "What is your name?":                                 #Getting the first message from the server
-    #                 try:
-    #                     self.conn.send(str.encode(self.name+' '+self.pwd))       #Sending the name and password to the server
-    #                 except:
-    #
-    #                     self.conn.close()
-    #                     self.client_menu()
-    #                 try:
-    #                     list_active_user = self.conn.recv(RECV_BUFFER).decode()     #this will be a string of name separated by spaces
-    #                 except:
-    #                     self.conn.close()
-    #                     self.client_menu()
-    #                 if list_active_user == 'authentication_error':               #Authentication error implies that user is either not registered-
-    #                                                                              #-or password is incorrect. Redirecting to the Client menu
-    #
-    #                     self.wp_error = ttk.Label(self.frame, text='Authentication_Error', anchor = tkinter.CENTER,justify = tkinter.CENTER)
-    #                     self.try_again = ttk.Button(self.frame, text='Try again', command = self.client_menu)
-    #                     self.wp_error.grid(row = 0, column=1, pady=10, padx=5)
-    #                     self.try_again.grid(row=1,column=1,pady=10,padx=5)
-    #                     self.try_again_bool = True
-    #                     self.frame.pack(fill=tkinter.BOTH, expand = True)
-    #                     return -1
-    #                 else:
-    #                     list_of_active_user = list(list_active_user[1:].split(' ')) #now it has all the names separately, its not a string
-    #                     list_of_active_user.remove(self.name)
-    #                     # print(list_of_active_user)
-    #                     got_list = True
-    #         else:
-    #             return list_of_active_user
 
     # Helper function for quit option
     def client_quit(self):
@@ -808,12 +773,21 @@ class Application(tkinter.Tk):
                 # Serialize and save the key bundle
                 with open(file_path, 'wb') as file:
                     pickle.dump(self.bob, file)
+
+            if len(users.keys()) != 0:
+                if not os.path.exists('./store/users'):
+                    os.makedirs('./store/users')
+
+                # Specify the file path
+                for user in users.keys():
+                    file_path = os.path.join('./store/users', user + '.dat')
+
+                    # Serialize and save the key bundle
+                    with open(file_path, 'wb') as file:
+                        pickle.dump(users[user], file)
             self.should_quit = True
-            # self.conn.send("#!quit".encode())
-            # print(self.conn.recv(RECV_BUFFER).decode('utf-8'))
-            self.conn.shutdown(socket.SHUT_WR)
-            self.clientchat_thread.join()
             self.conn.close()
+            self.clientchat_thread.join()
             self.destroy()
         else:
             pass

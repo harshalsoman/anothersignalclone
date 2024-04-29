@@ -85,45 +85,6 @@ def __header__(dh_pair, pn, n):
     (_, dh_pub) = dh_pair
     return dh_pub + int.to_bytes(pn, 32) + int.to_bytes(n, 32)
 
-def __x3dh_w_key_bundle__(id_pair, msg, key_bundle):
-    (id_pr, id_pk) = id_pair
-    (id_pub, spk_pub, spk_sig, otpk_pub) = key_bundle
-
-    assert xeddsa.verify(id_pub, spk_pub, spk_sig)
-    (ep_pr, ep_pk) = __generate_dh__()
-
-    dh1 = __diffie_hellman__(id_pair, spk_pub)
-    dh2 = __diffie_hellman__((ep_pr, ep_pk) , id_pub)
-    dh3 = __diffie_hellman__((ep_pr, ep_pk) , spk_pub)
-
-    if otpk_pub is None:
-        sk = __hkdf__(dh1 + dh2 + dh3)
-    else:
-        dh4 = __diffie_hellman__((ep_pr, ep_pk) , otpk_pub)
-        sk = __hkdf__(dh1 + dh2 + dh3 + dh4)
-
-    header = os.urandom(32) + id_pk + ep_pk
-    cipher = __encrypt__(sk, msg, header)
-    return (sk, header, cipher)
-
-def __x3dh_w_header__(key_bundle_pair, header, cipher):
-    ((id_pr, id_pk), (spk_pr, spk_pk), (otpk_pr, otpk_pk)) = key_bundle_pair
-
-    id_pub = header[32:64]
-    ep_pub = header[64:]
-    dh1 = __diffie_hellman__((spk_pr, spk_pk), id_pub)
-    dh2 = __diffie_hellman__((id_pr, id_pk), ep_pub)
-    dh3 = __diffie_hellman__((spk_pr, spk_pk), ep_pub)
-
-    if otpk_pr is None:
-        sk = __hkdf__(dh1 + dh2 + dh3)
-    else:
-        dh4 = __diffie_hellman__((otpk_pr, otpk_pk), ep_pub)
-        sk = __hkdf__(dh1 + dh2 + dh3 + dh4)
-
-    msg = __decrypt__(sk, cipher, header)
-    return (sk, msg)
-
 class KeyStore:
     def __init__(self):
         self.ltk = __generate_dh__()
@@ -282,55 +243,6 @@ class Ratchet:
         self.dh_sdr = __generate_dh__()
         self.rk, self.ck_sdr = __kdf_rk__(self.rk, __diffie_hellman__(self.dh_sdr, self.dh_rcv))
 
-if __name__ == '__main__x':
-    (id_sk, id_pk) = __generate_dh__()
-
-    (id2_sk, id2_pk) = __generate_dh__()
-    (spk_sk, spk_pk) = __generate_dh__()
-    (otpk_sk, otpk_pk) = __generate_dh__()
-
-    spk_sig = xeddsa.sign(id2_sk, spk_pk)
-
-    (sk, header, cipher) = __x3dh_w_key_bundle__((id_sk, id_pk), 'wants to contact you', (id2_pk, spk_pk, spk_sig, otpk_pk))
-    (sk2, msg) = __x3dh_w_header__(((id2_sk, id2_pk), (spk_sk, spk_pk), (otpk_sk, otpk_pk)), header, cipher)
-
-    assert sk == sk2
-    print(msg)
-    (b_sk, b_pk) = __generate_dh__()
-
-    alice = Ratchet(sk, dh_pub_key=b_pk)
-    bob = Ratchet(sk2, (b_sk, b_pk))
-
-    header1, cipher1 = alice.encrypt('Hey Bob, how are you?')
-    header2, cipher2 = alice.encrypt('I think we should meet up')
-    header3, cipher3 = alice.encrypt('Maybe, its for the best')
-    header4, cipher4 = alice.encrypt('That we go ahead')
-    header5, cipher5 = alice.encrypt('Hey Bob, how are you?')
-
-    print('Alice> ', bob.decrypt(header5, cipher5))
-
-    header6, cipher6 = bob.encrypt('Hey Alice, nice seeing you out here!')
-
-
-    print('Bob> ', alice.decrypt(header6, cipher6))
-    # print(bob.export_context())
-    # bob_copy = Ratchet.load_context(bob.export_context())
-    saved = open('../self.ratchet.dat', 'wb')
-    pickle.dump(bob, saved)
-    saved.close()
-
-    saved = open('../self.ratchet.dat', 'rb')
-    bob_copy = pickle.load(saved)
-    saved.close()
-
-    os.remove('../self.ratchet.dat')
-
-    print('Alice> ', bob_copy.decrypt(header3, cipher3))
-    print('Alice> ', bob_copy.decrypt(header2, cipher2))
-    print('Alice> ', bob_copy.decrypt(header4, cipher4))
-    print('Alice> ', bob_copy.decrypt(header1, cipher1))
-
-
 if __name__ == '__main__':
     bob = KeyStore()
 
@@ -342,6 +254,7 @@ if __name__ == '__main__':
     otpk_pk = otpks[0] if len(otpks) else None
     (sk_alice, header, cipher, ratchet_pair) = alice.x3dh_w_key_bundle('alice requesting permission to chat', (ltk_pk, spk_pk, spk_sig, otpk_pk))
     alice = Ratchet(sk_alice, ratchet_pair)
+    # hd0, cip0 = alice.encrypt('Hiscramble')
 
     (sk_bob, msg, ratchet_pub) = bob.x3dh_w_header(header, cipher)
     print('Alice> ', msg)
