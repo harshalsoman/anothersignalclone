@@ -21,7 +21,7 @@ def authenticate(connection, username, password):
     try:
         cursor = connection.cursor()
         query = "SELECT 1 FROM users WHERE username = ? and password = ?"
-        cursor.execute(query, (username, password))
+        cursor.execute(query, (username, password,))
         result = cursor.fetchone()
         return result
 
@@ -31,7 +31,6 @@ def authenticate(connection, username, password):
 
 
 def register(connection, username, password):
-    cursor = None
     try:
         cursor = connection.cursor()
         query = "SELECT 1 FROM users WHERE username = ?"
@@ -53,12 +52,12 @@ def register(connection, username, password):
             cursor.close()
 
 
-def store_message(connection, sender, receiver, message):
+def store_message(connection, sender, receiver, message, type):
     cursor = None
     try:
         cursor = connection.cursor()
-        query = "INSERT INTO messages (sender, receiver, message, timestamp) VALUES (?, ?, ?, ?)"
-        cursor.execute(query, (sender, receiver, message, time.time_ns()))
+        query = "INSERT INTO messages (sender, receiver, message, timestamp, type) VALUES (?, ?, ?, ?, ?)"
+        cursor.execute(query, (sender, receiver, message, time.time_ns(), type, ))
         connection.commit()
 
     finally:
@@ -70,11 +69,23 @@ def fetch_all_messages(connection, receiver):
     cursor = None
     try:
         cursor = connection.cursor()
-        query = "SELECT message, sender, timestamp FROM messages WHERE receiver = ?"
-        cursor.execute(query, (receiver))
+        query = "SELECT message, sender, type, timestamp FROM messages WHERE receiver = ?"
+        cursor.execute(query, (receiver,))
         result = cursor.fetchall()
         cursor.close()
         return result
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+def delete_all_messages(connection, receiver):
+    cursor = None
+    try:
+        cursor = connection.cursor()
+        query = "DELETE FROM messages WHERE receiver = ?"
+        cursor.execute(query, (receiver,))
+        cursor.close()
 
     finally:
         if cursor is not None:
@@ -141,4 +152,9 @@ def close_connection(connection):
 #     close_connection(c)
 
 if __name__ == '__main__':
-    init_datastore()
+    import os
+    c = get_connection()
+    # store_key_bundle(c, 'alice', os.urandom(128))
+    # store_message(c, 'alice', 'bob', os.urandom(466))
+    # print(fetch_all_users(c))
+    close_connection(c)
