@@ -138,23 +138,7 @@ def close_connection(connection):
     if connection is not None:
         connection.close()
 
-#
-# if __name__ == '__main__':
-#     c = get_connection()
-#     cursor = c.cursor()
-#     query = "SELECT username, password FROM users"
-#     cursor.execute(query)
-#     r = cursor.fetchall()
-#     cursor.close()
-#     for u in r:
-#         print(u[0])
-#         print(u[1])
-#     close_connection(c)
-
 if __name__ == '__main__':
     import os
     c = get_connection()
-    # store_key_bundle(c, 'alice', os.urandom(128))
-    # store_message(c, 'alice', 'bob', os.urandom(466))
-    # print(fetch_all_users(c))
     close_connection(c)
