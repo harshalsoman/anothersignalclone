@@ -44,7 +44,7 @@ class Application(tkinter.Tk):
 
 
     def launch_app(self):
-        dat_file_path = "./store/kb.dat" 
+        dat_file_path = "./store/kb.dat"
         dat_dir = os.path.dirname(dat_file_path)
         os.makedirs(dat_dir, exist_ok=True)
 
@@ -86,7 +86,7 @@ class Application(tkinter.Tk):
             self.try_again_bool2 = False
         self.client_button.destroy()
         self.reg_btn.destroy()
-        self.host = ip_address 
+        self.host = ip_address
         self.port = 9000
         self.reg_name_label = ttk.Label(self.frame, text='Username', justify=tkinter.RIGHT)
         self.reg_name_entry = ttk.Entry(self.frame)
@@ -172,7 +172,7 @@ class Application(tkinter.Tk):
 
     def launch_client(self):
 
-        self.host = ip_address 
+        self.host = ip_address
         self.port = 9000
         self.name = self.name_entry.get()
         self.pwd = self.pwd_entry.get()
@@ -216,15 +216,43 @@ class Application(tkinter.Tk):
                     self.conn.send(sender)
                     self.conn.send('msg')
                     hdr, cph = users[sender].encrypt(self.name + ' has accepted your request to chat')
+                    new_security_code = users[sender].get_safety_number()
+                    print('Security code is:'+ new_security_code)
+                    self.update_security_code_label(new_security_code)
                     self.conn.send(hdr)
                     self.conn.send(cph)
+
+                    if len(hdr)>96:
+                        otpk = hdr[96:]
+                        if otpk in self.bob.otpk:
+                            self.bob.otpk.remove(otpk)
+                            ltk_pk, spk_pk, otpks = self.bob.get_key_bundle()
+                            spk_sig = self.bob.sign_spk()
+                            msg = ltk_pk + spk_pk + spk_sig
+                            b = b''
+                            for byte in otpks:
+                                b += byte
+                            msg += b
+                            requests.post('http://18.223.106.196:8000/keybundle/' + self.username,
+                                                json={
+                                                    "key_bundle": base64.encodebytes(msg).decode()
+                                                },
+                                                headers={'Content-Type': 'application/json'})
             else:
                 sender = msg['by']
                 content = base64.decodebytes(msg['content'].encode())
                 if sender not in messages.keys():
                     messages[sender] = []
                 messages[sender].append(users[sender].decrypt(content[:128], content[128:]))
+                new_security_code = users[sender].get_safety_number()
+                print('Security code is:'+ new_security_code)
+                self.update_security_code_label(new_security_code)
 
+            var = requests.delete('http://18.223.106.196:8000/messages/' + self.name,
+                               headers={'Content-Type': 'application/json'})
+
+
+        # STYLISING
         s = ttk.Style()
         s.configure("TButton", background='burlywood3')
         s.configure('my.TFrame', background='old lace')
@@ -232,11 +260,13 @@ class Application(tkinter.Tk):
         s.configure('new1.TFrame', background='ivory2')
         s.configure("TLabelframe", background='old lace', highlightbackground='old lace')
 
-        self.chat_frame = ttk.Frame(self.frame, borderwidth=5, style='my.TFrame')
-        self.clients_frame = ttk.Frame(self.frame, style='my.TFrame')
-        self.entry_frame = ttk.Frame(self, style='my.TFrame')
+        # Frames Used in Chat Window
+        self.chat_frame = ttk.Frame(self.frame, borderwidth=5, style='my.TFrame')  # for the actual display of chat
+        self.clients_frame = ttk.Frame(self.frame, style='my.TFrame')  # for radio buttons
+        self.entry_frame = ttk.Frame(self, style='my.TFrame')  # for input text
         self.button_frame = ttk.Frame(self.entry_frame, style='my.TFrame')
 
+        # Fonts Used in Chat Window
         fonte = tkinter.font.Font(family='Arial', size=16, weight=tkinter.font.BOLD)
         s.configure('.', font=fonte)
         font1 = tkinter.font.Font(family="Comic Sans MS", size=16, weight=tkinter.font.BOLD)
@@ -248,12 +278,14 @@ class Application(tkinter.Tk):
         self.scroll.configure(command=self.chat_text.yview)
         self.chat_text.configure(yscrollcommand=self.scroll.set)
 
+        # TAKING THE IMAGES REQUIRED FOR CHAT ICONS
         self.img = ImageTk.PhotoImage(Image.open('Images/send2.png'))
         self.img1 = ImageTk.PhotoImage(Image.open('Images/file.png'))
         self.img2 = ImageTk.PhotoImage(Image.open('Images/user.png'))
 
-        self.chat_entry = ttk.Entry(self.entry_frame, font=font2)
-        self.scroll1 = tkinter.Scrollbar(self.entry_frame, orient=tkinter.HORIZONTAL)
+        # MESSAGE ENTRY WINDOW
+        self.chat_entry = ttk.Entry(self.entry_frame, font=font2)  # Text Entry Widget
+        self.scroll1 = tkinter.Scrollbar(self.entry_frame, orient=tkinter.HORIZONTAL)  # Adding ScrollBar
         self.scroll1.configure(command=self.chat_entry.xview)
         self.chat_entry.configure(xscrollcommand=self.scroll1.set)
         self.send_button = ttk.Button(self.button_frame, image=self.img)
@@ -262,16 +294,46 @@ class Application(tkinter.Tk):
         self.send_button.bind('<Button-1>', self.send)
         self.chat_entry.bind('<Return>', self.send)
 
+        # CLIENT FRAME
         self.user_icon = ttk.Label(self.clients_frame, image=self.img2, background='light blue', text=self.name,
                                    compound="top", font=self.font3, anchor=tkinter.E)
         self.frame.pack(side=tkinter.TOP, fill=tkinter.BOTH,
                         expand=True)
         self.user_icon.pack(side=tkinter.TOP)
+
+        # SERVER INFO
+        # self.server_l=ttk.Labelframe(self.clients_frame,text="Server Info",labelanchor=tkinter.NW,padding=20,borderwidth=2)
+        # self.server_info1=ttk.Label(self.server_l,background='old lace',text="Server IP : "+self.host+'\n\n'+"Server Port: "+str(self.port),font=self.font3)
+        # self.server_l.pack(side=tkinter.TOP,pady=40)
+        # self.server_info1.pack()
+
+        # TAB SECTION
         s.configure('TNotebook', background='old lace', borderwidth=1)
         self.tabs = ttk.Notebook(self.clients_frame, height=20, padding=10)
         self.tabs.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
+        self.f1=ttk.Frame(self.clients_frame,style="new.TFrame")
         self.f2 = ttk.Frame(self.clients_frame, style="new1.TFrame")
+        self.tabs.add(self.f1,text="Security Code")
         self.tabs.add(self.f2, text="Contacts")
+
+        self.security_code_label = ttk.Label(self.f1, text="Security Code: ", font=self.font3,
+                                             foreground='gray49', background='old lace')
+        self.security_code_label.grid(row=0, column=0, sticky=tkinter.W)
+
+
+        # ONLINE USERS#
+        # self.online=[];j=0
+        # for i in self.list_of_active_users:
+        #     # print(i)
+        #     self.enable[i]=tkinter.IntVar()
+        #     # self.enable[i].set(0)
+        #     l=ttk.Label(self.f1,padding=10,text=i,justify=tkinter.LEFT,font=self.font3,foreground='forest green',background='navajo white')
+        #     l.grid(row=j,column=0,sticky=tkinter.W)
+        #     self.online.append(l)
+        #     j=j+1
+
+        # CONTACTS#
+
         self.contact_label = [];
         self.selected_contact = tkinter.StringVar()
         self.contact_combobox = ttk.Combobox(self.f2, textvariable=self.selected_contact, font=self.font3,
@@ -293,7 +355,10 @@ class Application(tkinter.Tk):
         self.num_contacts = len(var) - 1
 
         self.contact_combobox['values'] = self.contacts_with_status
+        # Bind a callback function to handle selection changes
         self.contact_combobox.bind("<<ComboboxSelected>>", self.handle_contact_selection)
+
+        # PACKING ABOVE CREATED widgets                      #The order of packing of widgets may be arbitrary to ensure proper layout.
         self.clients_frame.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
         self.chat_frame.pack(side=tkinter.RIGHT, fill=tkinter.BOTH, expand=True)
         self.send_button.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
@@ -309,6 +374,10 @@ class Application(tkinter.Tk):
                                                   target=self.clientchat)
         self.clientchat_thread.start()
 
+        # self.clientchat_thread.join()
+    # Define a method to update the security code label
+    def update_security_code_label(self, new_security_code):
+        self.security_code_label.config(text = new_security_code)
     def handle_contact_selection(self, event):
         selected_contact = self.selected_contact.get()
         if '*' in selected_contact:
@@ -322,21 +391,25 @@ class Application(tkinter.Tk):
             spk = bundle[32:64]
             sig = bundle[64:128]
             arr = []
+
             _sum = 128
             while _sum + 32 >= len(bundle):
                 arr.append(bundle[_sum:_sum + 32])
                 _sum = _sum + 32
+
             arr = arr[0] if len(arr) else None
             (sk_alice, header, cipher, ratchet_pair) = self.bob.x3dh_w_key_bundle(
                 self.name + ' is requesting permission to chat', (ltk, spk, sig, arr))
             users[selected_contact] = Ratchet(sk_alice, ratchet_pair)
             print('Ratchet generated')
             print(users.keys())
+
             self.conn.send(selected_contact)
             self.conn.send('x3dh')
             self.conn.send(header)
             self.conn.send(cipher)
             print('sending ratchet message')
+
             self.chat_text.config(state=tkinter.NORMAL)
             self.chat_text.insert(tkinter.END,
                                   'Waiting for ' + selected_contact + 'to accept request to chat...' + '\n',
@@ -356,6 +429,7 @@ class Application(tkinter.Tk):
                 self.chat_text.config(state=tkinter.DISABLED)
                 self.chat_text.see(tkinter.END)
 
+    # RECEIVER SELECTION WINDOW
     def user_selection(self):
         self.root = tkinter.Toplevel(self)
         self.root.title("User Selection")
@@ -380,6 +454,7 @@ class Application(tkinter.Tk):
         frame2.pack(side=tkinter.BOTTOM, fill=tkinter.BOTH, expand=True)
         frame.pack(fill=tkinter.BOTH, expand=True)
 
+    # CONTACT ADDITION WINDOW
     def add_contact(self):
         self.root = tkinter.Toplevel(self)
         self.root.title("Contact Addition")
@@ -409,6 +484,7 @@ class Application(tkinter.Tk):
         self.num_contacts += 1
         self.root.withdraw()
 
+    # CONTACT DELETION WINDOW
     def del_contact(self):
         self.root = tkinter.Toplevel(self)
         self.root.title("Contact Deletion")
@@ -450,6 +526,7 @@ class Application(tkinter.Tk):
         self.multimedia_send()
 
     def send(self, event):
+        print("I am here")
         message = self.chat_entry.get()
         contact = self.selected_contact.get()
         if '*' in contact:
@@ -472,28 +549,93 @@ class Application(tkinter.Tk):
         self.chat_text.see(tkinter.END)
 
     def multimedia_send(self):
-        filename = self.mmfilename
+        # Check if mmfilename is available
+        if self.mmfilename:
+            contact = self.selected_contact.get()
+            if '*' in contact:
+                contact = contact[:-2]
 
-        with open(filename, "rb") as file:
-            encoded_string = (base64.b64encode(file.read())).decode()
+            # Read the image file and store the binary data
+            with open(self.mmfilename, 'rb') as f:
+                image_data1 = (base64.b64encode(f.read())).decode()
+                # Decode the base64 string to binary image data
+            binary_data = base64.b64decode(image_data1)
+            image_data = BytesIO(binary_data)
+            image = Image.open(image_data)
+            max_width, max_height = 300, 300
+            # Resize the image maintaining aspect ratio
+            original_width, original_height = image.size
+            ratio = min(max_width / original_width, max_height / original_height)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+            # image = image.resize((new_width, new_height), Image.ANTIALIAS)
+            # try:
+                # Trying the newer method if available
 
-        data = "^"
-        for client in self.list_of_active_users:
-            if self.enable[client].get() == 1:
-                data = data + "@" + client + ' '
+            try:
+                # Trying the newer method if available
+                from PIL import ImageResampling
+                image = image.resize((new_width, new_height), ImageResampling.LANCZOS)
+            except ImportError:
+                # Fallback to the older method if ImageResampling is not available
+                image = image.resize((new_width, new_height), Image.LANCZOS)
+            # except ImportError:
+            #     # Fallback to the older method if ImageResampling is not available
+            #     image = image.resize((new_width, new_height), Image.LANCZOS)
 
-        data = data + ':'
-        data = data + filename + ':'
-        data_to_send = data + encoded_string
-        self.chat_entry.delete(0, tkinter.END)
+            # Convert the PIL image object to a format that Tkinter can use
+            photo = ImageTk.PhotoImage(image)
 
-        self.chat_text.config(state=tkinter.NORMAL)
-        self.chat_text.insert(tkinter.END, self.name + ':' + filename + '\n', ('tag{0}'.format(1)))
-        self.chat_text.tag_config('tag{0}'.format(1), justify=tkinter.RIGHT, foreground='RoyalBlue3',
-                                  font=self.chat_font)
-        self.chat_text.config(
-            state=tkinter.DISABLED)
-        self.chat_text.see(tkinter.END)
+            # Ensure the text widget allows changes (is in NORMAL state)
+            self.chat_text.config(state=tkinter.NORMAL)
+
+            # Create an image window in the chat_text widget at the end of the text
+            self.chat_text.image_create(tkinter.END, image=photo)
+
+            # Append a newline after the image to ensure the next content starts from a new line
+            self.chat_text.insert(tkinter.END, '\n')
+
+            # Encrypt the image data
+            header, cipher = users[contact].encrypt("Image"+image_data1)
+
+            print('Sending encrypted multimedia message')
+            self.conn.send(contact)
+            self.conn.send('msg')
+            self.conn.send(header)
+            self.conn.send(cipher)
+            print('Sent encrypted multimedia message')
+
+            # Reset mmfilename after sending
+            self.mmfilename = None
+        else:
+            print("No multimedia file selected.")
+        # filename = self.mmfilename
+        #
+        # with open(filename, "rb") as file:
+        #     encoded_string = (base64.b64encode(file.read())).decode()
+        #
+        # # data = "^"
+        # # for client in self.list_of_active_users:
+        # #     if self.enable[client].get() == 1:
+        # #         data = data + "@" + client + ' '
+        # #
+        # # data = data + ':'
+        # # data = data + filename + ':'
+        # # data_to_send = data + encoded_string
+        # #
+        # # # data_to_display = '^@'+dest+':'+ filename
+        # # # data_to_send = data_to_display + ':' + encoded_string
+        #
+        # self.chat_entry.delete(0, tkinter.END)  # Emptying the chat entry box
+        # # self.conn.send(data_to_send.encode())
+        #
+        # self.chat_text.config(state=tkinter.NORMAL)
+        # self.chat_text.insert(tkinter.END, self.name + ':' + filename + '\n', ('tag{0}'.format(1)))
+        # self.chat_text.tag_config('tag{0}'.format(1), justify=tkinter.RIGHT, foreground='RoyalBlue3',
+        #                           font=self.chat_font)
+        # self.chat_text.config(
+        #     state=tkinter.DISABLED)  # Again Disabling the edit functionality so that the user cannot edit it
+        # self.chat_text.see(tkinter.END)  # Enables the user to see the edited chat chat
 
     def clientchat(self):
         while not self.should_quit:
@@ -529,9 +671,14 @@ class Application(tkinter.Tk):
                         print("success")
                         users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
                         print('Ratchet created')
+
                         self.conn.send(sender)
                         self.conn.send('msg')
                         hdr, cph = users[sender].encrypt(sender + ' has accepted your request to chat')
+                        new_security_code = users[sender].get_safety_number()
+
+                        print('Security code is:'+ new_security_code)
+                        self.update_security_code_label(new_security_code)
                         self.conn.send(hdr)
                         self.conn.send(cph)
                         continue
@@ -542,17 +689,22 @@ class Application(tkinter.Tk):
                     print('cipher ', cipher)
                     print('header ', header)
                     msg = users[sender].decrypt(header, cipher)
+                    new_security_code = users[sender].get_safety_number()
+                    print('Security code is:' + new_security_code)
+                    self.update_security_code_label(new_security_code)
                     contact = self.selected_contact.get()
                     if '*' in contact:
                         contact = contact[:-2]
                     print('decrypted message ', msg)
                     print('sender and contact', sender, contact)
-                    print(sender == contact, "abcd")
+                    print(sender == contact)
+                    # Check if the message is an image
+
                     # if msg.startswith("Image:"):
                     #     image_data = msg[len("Image:"):]
                     #     self.display_message(sender, "", image_data)
                     # else:
-                    #     self.display_message(sender,msg) 
+                    #     self.display_message(sender,msg)
                     if sender == contact:
                         print("BC")
                         # self.chat_text.config(state=tkinter.NORMAL)
@@ -561,7 +713,7 @@ class Application(tkinter.Tk):
                         #                           font=self.chat_font)
                         # self.chat_text.config(state=tkinter.DISABLED)
                         # self.chat_text.see(tkinter.END)
-                        if msg.startswith("Image"): 
+                        if msg.startswith("Image"):
                             print("THere") # Assuming you prefix image messages with "Image:"
                             # Extract the image data from the decrypted message
                             image_data = msg[len("Image"):]
@@ -584,7 +736,7 @@ class Application(tkinter.Tk):
         # if sender == self.selected_contact.get():
         print("inside you")
         self.chat_text.config(state=tkinter.NORMAL)
-        self.chat_text.insert(tkinter.END, message + '\n', ('tag{0}'.format(2)))
+        self.chat_text.insert(tkinter.END, sender + ':' + message + '\n', ('tag{0}'.format(2)))
         self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
                                     font=self.chat_font)
         self.chat_text.config(state=tkinter.DISABLED)
@@ -595,7 +747,7 @@ class Application(tkinter.Tk):
         binary_data = base64.b64decode(image_data)
         image_data = BytesIO(binary_data)
         image = Image.open(image_data)
-        
+
         # Resize the image maintaining aspect ratio
         original_width, original_height = image.size
         ratio = min(max_width/original_width, max_height/original_height)
@@ -609,52 +761,64 @@ class Application(tkinter.Tk):
         except ImportError:
             # Fallback to the older method if ImageResampling is not available
             image = image.resize((new_width, new_height), Image.LANCZOS)
-        
+
         # Convert the PIL image object to a format that Tkinter can use
         photo = ImageTk.PhotoImage(image)
-        
+
         # Ensure the text widget allows changes (is in NORMAL state)
         self.chat_text.config(state=tk.NORMAL)
-        
+
         # Create an image window in the chat_text widget at the end of the text
         self.chat_text.image_create(tk.END, image=photo)
-        
+
         # Append a newline after the image to ensure the next content starts from a new line
         self.chat_text.insert(tk.END, '\n')
-        
+
         # Keep a reference to the image to prevent garbage collection
         self.chat_text.image = photo  # You might want to manage this differently if many images are expected
-        
+
         # Disable the text widget to prevent user edits
         self.chat_text.config(state=tk.DISABLED)
-        
+
         # Scroll to the end of the text widget to ensure the image is visible
         self.chat_text.see(tk.END)
 
 
     def client_quit(self):
+
         if tkinter.messagebox.askokcancel(title="Quit Window", message="Do you really want to quit?"):
             if self.bob:
                 directory = './store'
                 if not os.path.exists(directory):
                     os.makedirs(directory)
+
+                # Specify the file path
                 file_path = os.path.join(directory, 'kb.dat')
+
+                # Serialize and save the key bundle
                 with open(file_path, 'wb') as file:
                     pickle.dump(self.bob, file)
 
             if len(users.keys()) != 0:
                 if not os.path.exists('./store/users'):
                     os.makedirs('./store/users')
+
+                # Specify the file path
                 for user in users.keys():
                     file_path = os.path.join('./store/users', user + '.dat')
+
+                    # Serialize and save the key bundle
                     with open(file_path, 'wb') as file:
                         pickle.dump(users[user], file)
             self.should_quit = True
             self.conn.close()
             self.clientchat_thread.join()
             self.destroy()
+
         else:
             pass
+
+
 
 
 if __name__ == '__main__':
