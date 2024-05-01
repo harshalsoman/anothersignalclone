@@ -557,47 +557,34 @@ class Application(tkinter.Tk):
 
             # Read the image file and store the binary data
             with open(self.mmfilename, 'rb') as f:
-                image_data1 = (base64.b64encode(f.read())).decode()
+                image_data1 = base64.b64encode(f.read()).decode()
                 # Decode the base64 string to binary image data
             binary_data = base64.b64decode(image_data1)
             image_data = BytesIO(binary_data)
             image = Image.open(image_data)
-            max_width, max_height = 300, 300
+            
             # Resize the image maintaining aspect ratio
+            max_width, max_height = 300, 300
             original_width, original_height = image.size
             ratio = min(max_width / original_width, max_height / original_height)
             new_width = int(original_width * ratio)
             new_height = int(original_height * ratio)
-            # image = image.resize((new_width, new_height), Image.ANTIALIAS)
-            # try:
-                # Trying the newer method if available
-
+            
+            # Resize using the appropriate method
             try:
-                # Trying the newer method if available
                 from PIL import ImageResampling
                 image = image.resize((new_width, new_height), ImageResampling.LANCZOS)
             except ImportError:
-                # Fallback to the older method if ImageResampling is not available
                 image = image.resize((new_width, new_height), Image.LANCZOS)
-            # except ImportError:
-            #     # Fallback to the older method if ImageResampling is not available
-            #     image = image.resize((new_width, new_height), Image.LANCZOS)
 
             # Convert the PIL image object to a format that Tkinter can use
             photo = ImageTk.PhotoImage(image)
 
-            # Ensure the text widget allows changes (is in NORMAL state)
-            self.chat_text.config(state=tkinter.NORMAL)
+            # Display the image in the sender's chat window
+            self.display_image(image_data1, sender = True)
 
-            # Create an image window in the chat_text widget at the end of the text
-            self.chat_text.image_create(tkinter.END, image=photo)
-
-            # Append a newline after the image to ensure the next content starts from a new line
-            self.chat_text.insert(tkinter.END, '\n')
-
-            # Encrypt the image data
-            header, cipher = users[contact].encrypt("Image"+image_data1)
-
+            # Encrypt and send the image data
+            header, cipher = users[contact].encrypt("Image" + image_data1)
             print('Sending encrypted multimedia message')
             self.conn.send(contact)
             self.conn.send('msg')
@@ -609,33 +596,6 @@ class Application(tkinter.Tk):
             self.mmfilename = None
         else:
             print("No multimedia file selected.")
-        # filename = self.mmfilename
-        #
-        # with open(filename, "rb") as file:
-        #     encoded_string = (base64.b64encode(file.read())).decode()
-        #
-        # # data = "^"
-        # # for client in self.list_of_active_users:
-        # #     if self.enable[client].get() == 1:
-        # #         data = data + "@" + client + ' '
-        # #
-        # # data = data + ':'
-        # # data = data + filename + ':'
-        # # data_to_send = data + encoded_string
-        # #
-        # # # data_to_display = '^@'+dest+':'+ filename
-        # # # data_to_send = data_to_display + ':' + encoded_string
-        #
-        # self.chat_entry.delete(0, tkinter.END)  # Emptying the chat entry box
-        # # self.conn.send(data_to_send.encode())
-        #
-        # self.chat_text.config(state=tkinter.NORMAL)
-        # self.chat_text.insert(tkinter.END, self.name + ':' + filename + '\n', ('tag{0}'.format(1)))
-        # self.chat_text.tag_config('tag{0}'.format(1), justify=tkinter.RIGHT, foreground='RoyalBlue3',
-        #                           font=self.chat_font)
-        # self.chat_text.config(
-        #     state=tkinter.DISABLED)  # Again Disabling the edit functionality so that the user cannot edit it
-        # self.chat_text.see(tkinter.END)  # Enables the user to see the edited chat chat
 
     def clientchat(self):
         while not self.should_quit:
@@ -742,46 +702,51 @@ class Application(tkinter.Tk):
         self.chat_text.config(state=tkinter.DISABLED)
         self.chat_text.see(tkinter.END)
 
-    def display_image(self, image_data, max_width=300, max_height=300):
+    def display_image(self, image_data, sender=False):
         # Decode the base64 string to binary image data
         binary_data = base64.b64decode(image_data)
         image_data = BytesIO(binary_data)
         image = Image.open(image_data)
 
         # Resize the image maintaining aspect ratio
+        max_width, max_height = 400, 400
         original_width, original_height = image.size
-        ratio = min(max_width/original_width, max_height/original_height)
+        ratio = min(max_width / original_width, max_height / original_height)
         new_width = int(original_width * ratio)
         new_height = int(original_height * ratio)
-        #image = image.resize((new_width, new_height), Image.ANTIALIAS)
+        
+        # Resize using the appropriate method
         try:
-            # Trying the newer method if available
             from PIL import ImageResampling
             image = image.resize((new_width, new_height), ImageResampling.LANCZOS)
         except ImportError:
-            # Fallback to the older method if ImageResampling is not available
             image = image.resize((new_width, new_height), Image.LANCZOS)
 
         # Convert the PIL image object to a format that Tkinter can use
         photo = ImageTk.PhotoImage(image)
 
-        # Ensure the text widget allows changes (is in NORMAL state)
-        self.chat_text.config(state=tk.NORMAL)
+        # Create a label that will hold the image
+        image_label = tk.Label(self.chat_text, image=photo, bg='white')
+        image_label.image = photo  # keep a reference!
 
-        # Create an image window in the chat_text widget at the end of the text
-        self.chat_text.image_create(tk.END, image=photo)
-
-        # Append a newline after the image to ensure the next content starts from a new line
+        # Insert a newline to ensure the label is on a new line
         self.chat_text.insert(tk.END, '\n')
 
-        # Keep a reference to the image to prevent garbage collection
-        self.chat_text.image = photo  # You might want to manage this differently if many images are expected
+        # Insert the label into the text widget
+        self.chat_text.window_create(tk.END, window=image_label)
 
-        # Disable the text widget to prevent user edits
-        self.chat_text.config(state=tk.DISABLED)
+        # Apply tag configurations for alignment
+        if sender:
+            self.chat_text.tag_add("right", "end-1l linestart", "end-1l lineend")
+            self.chat_text.tag_configure("right", justify='right')
+        else:
+            self.chat_text.tag_add("left", "end-1l linestart", "end-1l lineend")
+            self.chat_text.tag_configure("left", justify='left')
 
-        # Scroll to the end of the text widget to ensure the image is visible
+        # Ensure the chat text scrolls to the end
         self.chat_text.see(tk.END)
+        # Disable editing
+        self.chat_text.config(state=tk.DISABLED)
 
 
     def client_quit(self):
