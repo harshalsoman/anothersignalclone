@@ -532,7 +532,7 @@ class Application(tkinter.Tk):
         if '*' in contact:
             contact = contact[:-2]
         header, cipher = users[contact].encrypt(message)
-
+        self.update_security_code_label(users[contact].get_safety_number())
         print('Sending encrypted message')
         self.conn.send(contact)
         self.conn.send('msg')
@@ -585,6 +585,7 @@ class Application(tkinter.Tk):
 
             # Encrypt and send the image data
             header, cipher = users[contact].encrypt("Image" + image_data1)
+            self.update_security_code_label(users[contact].get_safety_number())
             print('Sending encrypted multimedia message')
             self.conn.send(contact)
             self.conn.send('msg')
