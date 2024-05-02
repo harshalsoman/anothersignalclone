@@ -1,12 +1,10 @@
 import websockets.sync.server
 
-from _thread import *
-import sys, os, socket
+import sys
 import os
 import traceback
 
 import datastore
-import transport
 from flask import Flask, request
 import base64
 import threading
