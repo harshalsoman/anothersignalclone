@@ -47,10 +47,11 @@ class Application(tkinter.Tk):
             with open(dat_file_path, 'rb') as file:
                 self.bob = pickle.load(file)
 
-        users_folder_path = "./store/users"
-        os.makedirs(os.path.dirname(users_folder_path), exist_ok=True)
 
-        self.load_user_keys(users_folder_path)
+        users_folder_path = "users"
+        os.makedirs(os.path.join(dat_dir, users_folder_path), exist_ok=True)
+
+        self.load_user_keys('./store/users')
 
         self.title('Yet Another Signal Clone')
 
