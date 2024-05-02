@@ -24,6 +24,7 @@ global contacts
 with open('server_ip.txt', 'r') as file:
     ip_address = file.read().strip()
 
+
 class Application(tkinter.Tk):
     def load_user_keys(self, folder_path):
 
@@ -37,7 +38,6 @@ class Application(tkinter.Tk):
 
                 users[username] = ratchet_key
 
-
     def launch_app(self):
         dat_file_path = "./store/kb.dat"
         dat_dir = os.path.dirname(dat_file_path)
@@ -48,6 +48,7 @@ class Application(tkinter.Tk):
                 self.bob = pickle.load(file)
 
         users_folder_path = "./store/users"
+        os.makedirs(os.path.dirname(users_folder_path), exist_ok=True)
 
         self.load_user_keys(users_folder_path)
 
@@ -163,195 +164,193 @@ class Application(tkinter.Tk):
         self.frame.pack(fill=tkinter.BOTH, expand=True)
 
     def launch_client(self):
+        try:
+            self.host = ip_address
+            self.port = 9000
+            self.name = self.name_entry.get()
+            self.pwd = self.pwd_entry.get()
+            self.name_entry_label.destroy()
+            self.name_entry.destroy()
+            self.pwd_entry_label.destroy()
+            self.pwd_entry.destroy()
 
-        self.host = ip_address
-        self.port = 9000
-        self.name = self.name_entry.get()
-        self.pwd = self.pwd_entry.get()
-        self.name_entry_label.destroy()
-        self.name_entry.destroy()
-        self.pwd_entry_label.destroy()
-        self.pwd_entry.destroy()
+            self.launch_button.destroy()
+            self.frame.pack_forget()
+            f = 0
+            var = requests.post(f'http://{ip_address}:8000/authentication',
+                                data='username=' + self.name + '&password=' + self.pwd,
+                                headers={'Content-Type': 'application/x-www-form-urlencoded'})
+            if var.status_code != 200:
+                print("Failure to login")
+                self.launch_client()
+            self.flag = 0
+            self.conn = websockets.sync.client.connect(f"ws://{ip_address}:9000")
+            self.conn.send(self.name)
 
-        self.launch_button.destroy()
-        self.frame.pack_forget()
-        f = 0
-        var = requests.post(f'http://{ip_address}:8000/authentication',
-                            data='username=' + self.name + '&password=' + self.pwd,
-                            headers={'Content-Type': 'application/x-www-form-urlencoded'})
-        if var.status_code != 200:
-            print("Failure to login")
-            self.launch_client()
-        self.flag = 0
-        self.conn = websockets.sync.client.connect(f"ws://{ip_address}:9000")
-        self.conn.send(self.name)
-
-        self.title('Yet Another Signal Clone')
-        self.should_quit = False
-        self.protocol('WM_DELETE_WINDOW', self.client_quit)
-        var = requests.get(f'http://{ip_address}:8000/messages/' + self.name,
-                           headers={'Content-Type': 'application/json'})
-
-        for msg in var.json()['messages']:
-            if msg['type'] == 'x3dh':
-                sender = msg['by']
-                content = base64.decodebytes(msg['content'].encode())
-                (sk_bob, msg, ratchet_pub) = self.bob.x3dh_w_header(content[:128], content[128:])
-                if msg == sender + ' is requesting permission to chat':
-                    users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
-                    self.conn.send(sender)
-                    self.conn.send('msg')
-                    hdr, cph = users[sender].encrypt(self.name + ' has accepted your request to chat')
-                    new_security_code = users[sender].get_safety_number()
-                    self.update_security_code_label(new_security_code)
-                    self.conn.send(hdr)
-                    self.conn.send(cph)
-
-                    if len(hdr)>96:
-                        otpk = hdr[96:]
-                        if otpk in self.bob.otpk:
-                            self.bob.otpk.remove(otpk)
-                            ltk_pk, spk_pk, otpks = self.bob.get_key_bundle()
-                            spk_sig = self.bob.sign_spk()
-                            msg = ltk_pk + spk_pk + spk_sig
-                            b = b''
-                            for byte in otpks:
-                                b += byte
-                            msg += b
-                            requests.post('http://18.223.106.196:8000/keybundle/' + self.username,
-                                                json={
-                                                    "key_bundle": base64.encodebytes(msg).decode()
-                                                },
-                                                headers={'Content-Type': 'application/json'})
-            else:
-                sender = msg['by']
-                content = base64.decodebytes(msg['content'].encode())
-                if sender not in messages.keys():
-                    messages[sender] = []
-                messages[sender].append(users[sender].decrypt(content[:128], content[128:]))
-                new_security_code = users[sender].get_safety_number()
-                self.update_security_code_label(new_security_code)
-
-            var = requests.delete('http://18.223.106.196:8000/messages/' + self.name,
+            self.title('Yet Another Signal Clone')
+            self.should_quit = False
+            self.protocol('WM_DELETE_WINDOW', self.client_quit)
+            var = requests.get(f'http://{ip_address}:8000/messages/' + self.name,
                                headers={'Content-Type': 'application/json'})
 
+            for msg in var.json()['messages']:
+                if msg['type'] == 'x3dh':
+                    sender = msg['by']
+                    content = base64.decodebytes(msg['content'].encode())
+                    (sk_bob, msg, ratchet_pub) = self.bob.x3dh_w_header(content[:128], content[128:])
+                    if msg == sender + ' is requesting permission to chat':
+                        users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
+                        self.conn.send(sender)
+                        self.conn.send('msg')
+                        hdr, cph = users[sender].encrypt(self.name + ' has accepted your request to chat')
+                        # new_security_code = users[sender].get_safety_number()
+                        # self.update_security_code_label(new_security_code)
+                        self.conn.send(hdr)
+                        self.conn.send(cph)
 
-        # STYLISING
-        s = ttk.Style()
-        s.configure("TButton", background='burlywood3')
-        s.configure('my.TFrame', background='old lace')
-        s.configure('new.TFrame', background='navajo white')
-        s.configure('new1.TFrame', background='ivory2')
-        s.configure("TLabelframe", background='old lace', highlightbackground='old lace')
+                        if len(hdr) > 96:
+                            otpk = hdr[96:]
+                            if otpk in self.bob.otpk:
+                                self.bob.otpk.remove(otpk)
+                                ltk_pk, spk_pk, otpks = self.bob.get_key_bundle()
+                                spk_sig = self.bob.sign_spk()
+                                msg = ltk_pk + spk_pk + spk_sig
+                                b = b''
+                                for byte in otpks:
+                                    b += byte
+                                msg += b
+                                requests.post(f'http://{ip_address}:8000/keybundle/' + self.username,
+                                              json={
+                                                  "key_bundle": base64.encodebytes(msg).decode()
+                                              },
+                                              headers={'Content-Type': 'application/json'})
+                else:
+                    sender = msg['by']
+                    content = base64.decodebytes(msg['content'].encode())
+                    if sender not in messages.keys():
+                        messages[sender] = []
+                    messages[sender].append(users[sender].decrypt(content[:128], content[128:]))
+                    # new_security_code = users[sender].get_safety_number()
+                    # self.update_security_code_label(new_security_code)
+                var = requests.delete(f'http://{ip_address}:8000/messages/' + self.name)
 
-        # Frames Used in Chat Window
-        self.chat_frame = ttk.Frame(self.frame, borderwidth=5, style='my.TFrame')  # for the actual display of chat
-        self.clients_frame = ttk.Frame(self.frame, style='my.TFrame')  # for radio buttons
-        self.entry_frame = ttk.Frame(self, style='my.TFrame')  # for input text
-        self.button_frame = ttk.Frame(self.entry_frame, style='my.TFrame')
+            # STYLISING
+            s = ttk.Style()
+            s.configure("TButton", background='burlywood3')
+            s.configure('my.TFrame', background='old lace')
+            s.configure('new.TFrame', background='navajo white')
+            s.configure('new1.TFrame', background='ivory2')
+            s.configure("TLabelframe", background='old lace', highlightbackground='old lace')
 
-        # Fonts Used in Chat Window
-        fonte = tkinter.font.Font(family='Arial', size=16, weight=tkinter.font.BOLD)
-        s.configure('.', font=fonte)
-        font1 = tkinter.font.Font(family="Comic Sans MS", size=16, weight=tkinter.font.BOLD)
-        font2 = tkinter.font.Font(family="Arial", size=16, weight=tkinter.font.BOLD)
-        self.font3 = tkinter.font.Font(family="Courier New", size=16, weight=tkinter.font.BOLD)
-        self.chat_font = tkinter.font.Font(family="Helvetica", size=18, weight=tkinter.font.BOLD)
-        self.chat_text = tkinter.Text(self.chat_frame, state=tkinter.DISABLED)
-        self.scroll = tkinter.Scrollbar(self.chat_frame)
-        self.scroll.configure(command=self.chat_text.yview)
-        self.chat_text.configure(yscrollcommand=self.scroll.set)
+            # Frames Used in Chat Window
+            self.chat_frame = ttk.Frame(self.frame, borderwidth=5, style='my.TFrame')  # for the actual display of chat
+            self.clients_frame = ttk.Frame(self.frame, style='my.TFrame')  # for radio buttons
+            self.entry_frame = ttk.Frame(self, style='my.TFrame')  # for input text
+            self.button_frame = ttk.Frame(self.entry_frame, style='my.TFrame')
 
-        # TAKING THE IMAGES REQUIRED FOR CHAT ICONS
-        self.img = ImageTk.PhotoImage(Image.open('Images/send2.png'))
-        self.img1 = ImageTk.PhotoImage(Image.open('Images/file.png'))
-        self.img2 = ImageTk.PhotoImage(Image.open('Images/user.png'))
+            # Fonts Used in Chat Window
+            fonte = tkinter.font.Font(family='Arial', size=16, weight=tkinter.font.BOLD)
+            s.configure('.', font=fonte)
+            font1 = tkinter.font.Font(family="Comic Sans MS", size=16, weight=tkinter.font.BOLD)
+            font2 = tkinter.font.Font(family="Arial", size=16, weight=tkinter.font.BOLD)
+            self.font3 = tkinter.font.Font(family="Courier New", size=16, weight=tkinter.font.BOLD)
+            self.chat_font = tkinter.font.Font(family="Helvetica", size=18, weight=tkinter.font.BOLD)
+            self.chat_text = tkinter.Text(self.chat_frame, state=tkinter.DISABLED)
+            self.scroll = tkinter.Scrollbar(self.chat_frame)
+            self.scroll.configure(command=self.chat_text.yview)
+            self.chat_text.configure(yscrollcommand=self.scroll.set)
 
-        # MESSAGE ENTRY WINDOW
-        self.chat_entry = ttk.Entry(self.entry_frame, font=font2)  # Text Entry Widget
-        self.scroll1 = tkinter.Scrollbar(self.entry_frame, orient=tkinter.HORIZONTAL)  # Adding ScrollBar
-        self.scroll1.configure(command=self.chat_entry.xview)
-        self.chat_entry.configure(xscrollcommand=self.scroll1.set)
-        self.send_button = ttk.Button(self.button_frame, image=self.img)
-        self.browsebutton = ttk.Button(self.button_frame, image=self.img1,
-                                       command=self.browse)
-        self.send_button.bind('<Button-1>', self.send)
-        self.chat_entry.bind('<Return>', self.send)
+            # TAKING THE IMAGES REQUIRED FOR CHAT ICONS
+            self.img = ImageTk.PhotoImage(Image.open('Images/send2.png'))
+            self.img1 = ImageTk.PhotoImage(Image.open('Images/file.png'))
+            self.img2 = ImageTk.PhotoImage(Image.open('Images/user.png'))
 
-        # CLIENT FRAME
-        self.user_icon = ttk.Label(self.clients_frame, image=self.img2, background='light blue', text=self.name,
-                                   compound="top", font=self.font3, anchor=tkinter.E)
-        self.frame.pack(side=tkinter.TOP, fill=tkinter.BOTH,
-                        expand=True)
-        self.user_icon.pack(side=tkinter.TOP)
+            # MESSAGE ENTRY WINDOW
+            self.chat_entry = ttk.Entry(self.entry_frame, font=font2)  # Text Entry Widget
+            self.scroll1 = tkinter.Scrollbar(self.entry_frame, orient=tkinter.HORIZONTAL)  # Adding ScrollBar
+            self.scroll1.configure(command=self.chat_entry.xview)
+            self.chat_entry.configure(xscrollcommand=self.scroll1.set)
+            self.send_button = ttk.Button(self.button_frame, image=self.img)
+            self.browsebutton = ttk.Button(self.button_frame, image=self.img1,
+                                           command=self.browse)
+            self.send_button.bind('<Button-1>', self.send)
+            self.chat_entry.bind('<Return>', self.send)
 
-        # SERVER INFO
-        # self.server_l=ttk.Labelframe(self.clients_frame,text="Server Info",labelanchor=tkinter.NW,padding=20,borderwidth=2)
-        # self.server_info1=ttk.Label(self.server_l,background='old lace',text="Server IP : "+self.host+'\n\n'+"Server Port: "+str(self.port),font=self.font3)
-        # self.server_l.pack(side=tkinter.TOP,pady=40)
-        # self.server_info1.pack()
+            # CLIENT FRAME
+            self.user_icon = ttk.Label(self.clients_frame, image=self.img2, background='light blue', text=self.name,
+                                       compound="top", font=self.font3, anchor=tkinter.E)
+            self.frame.pack(side=tkinter.TOP, fill=tkinter.BOTH,
+                            expand=True)
+            self.user_icon.pack(side=tkinter.TOP)
 
-        # TAB SECTION
-        s.configure('TNotebook', background='old lace', borderwidth=1)
-        self.tabs = ttk.Notebook(self.clients_frame, height=20, padding=10)
-        self.tabs.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
-        self.f1=ttk.Frame(self.clients_frame,style="new.TFrame")
-        self.f2 = ttk.Frame(self.clients_frame, style="new1.TFrame")
-        self.tabs.add(self.f1,text="Security Code")
-        self.tabs.add(self.f2, text="Contacts")
+            # SERVER INFO
+            # self.server_l=ttk.Labelframe(self.clients_frame,text="Server Info",labelanchor=tkinter.NW,padding=20,borderwidth=2)
+            # self.server_info1=ttk.Label(self.server_l,background='old lace',text="Server IP : "+self.host+'\n\n'+"Server Port: "+str(self.port),font=self.font3)
+            # self.server_l.pack(side=tkinter.TOP,pady=40)
+            # self.server_info1.pack()
 
-        self.security_code_label = ttk.Label(self.f1, text="Security Code: ", font=self.font3,
-                                             foreground='gray49', background='old lace')
-        self.security_code_label.grid(row=0, column=0, sticky=tkinter.W)
+            # TAB SECTION
+            s.configure('TNotebook', background='old lace', borderwidth=1)
+            self.tabs = ttk.Notebook(self.clients_frame, height=20, padding=10)
+            self.tabs.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
+            self.f1 = ttk.Frame(self.clients_frame, style="new.TFrame")
+            self.f2 = ttk.Frame(self.clients_frame, style="new1.TFrame")
+            self.tabs.add(self.f1, text="Security Code")
+            self.tabs.add(self.f2, text="Contacts")
 
+            self.security_code_label = ttk.Label(self.f1, text="Security Code: ", font=self.font3,
+                                                 foreground='gray49', background='old lace')
+            self.security_code_label.grid(row=0, column=0, sticky=tkinter.W)
 
-        # CONTACTS#
+            # CONTACTS#
 
-        self.contact_label = [];
-        self.selected_contact = tkinter.StringVar()
-        self.contact_combobox = ttk.Combobox(self.f2, textvariable=self.selected_contact, font=self.font3,
-                                             foreground='gray49', background='old lace')
-        self.contact_combobox.grid(row=0, column=0, sticky=tkinter.W)
-        var = requests.get(f'http://{ip_address}:8000/users',
-                           headers={'Content-Type': 'application/json'})
-        var = var.json()['users']
-        self.contacts = []
-        self.contacts_with_status = []
-        for user in var:
-            if self.name == user['user']:
-                continue
-            self.contacts.append(user['user'])
-            if user['active']:
-                self.contacts_with_status.append(user['user'] + ' *')
-            else:
-                self.contacts_with_status.append(user['user'])
-        self.num_contacts = len(var) - 1
+            self.contact_label = [];
+            self.selected_contact = tkinter.StringVar()
+            self.contact_combobox = ttk.Combobox(self.f2, textvariable=self.selected_contact, font=self.font3,
+                                                 foreground='gray49', background='old lace')
+            self.contact_combobox.grid(row=0, column=0, sticky=tkinter.W)
+            var = requests.get(f'http://{ip_address}:8000/users',
+                               headers={'Content-Type': 'application/json'})
+            var = var.json()['users']
+            self.contacts = []
+            self.contacts_with_status = []
+            for user in var:
+                if self.name == user['user']:
+                    continue
+                self.contacts.append(user['user'])
+                if user['active']:
+                    self.contacts_with_status.append(user['user'] + ' *')
+                else:
+                    self.contacts_with_status.append(user['user'])
+            self.num_contacts = len(var) - 1
 
-        self.contact_combobox['values'] = self.contacts_with_status
-        # Bind a callback function to handle selection changes
-        self.contact_combobox.bind("<<ComboboxSelected>>", self.handle_contact_selection)
+            self.contact_combobox['values'] = self.contacts_with_status
+            # Bind a callback function to handle selection changes
+            self.contact_combobox.bind("<<ComboboxSelected>>", self.handle_contact_selection)
 
-        # PACKING ABOVE CREATED widgets                      #The order of packing of widgets may be arbitrary to ensure proper layout.
-        self.clients_frame.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
-        self.chat_frame.pack(side=tkinter.RIGHT, fill=tkinter.BOTH, expand=True)
-        self.send_button.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
-        self.browsebutton.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
-        self.button_frame.pack(side=tkinter.RIGHT)
-        self.scroll1.pack(side=tkinter.BOTTOM, fill=tkinter.X)
-        self.chat_entry.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
-        self.entry_frame.pack(side=tkinter.BOTTOM, fill=tkinter.X)
-        self.scroll.pack(side=tkinter.RIGHT, fill=tkinter.Y)
-        self.chat_text.pack(fill=tkinter.BOTH, expand=True)
-        self.chat_entry.focus_set()
-        self.clientchat_thread = threading.Thread(name='clientchat',
-                                                  target=self.clientchat)
-        self.clientchat_thread.start()
+            # PACKING ABOVE CREATED widgets                      #The order of packing of widgets may be arbitrary to ensure proper layout.
+            self.clients_frame.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
+            self.chat_frame.pack(side=tkinter.RIGHT, fill=tkinter.BOTH, expand=True)
+            self.send_button.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
+            self.browsebutton.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
+            self.button_frame.pack(side=tkinter.RIGHT)
+            self.scroll1.pack(side=tkinter.BOTTOM, fill=tkinter.X)
+            self.chat_entry.pack(side=tkinter.LEFT, fill=tkinter.BOTH, expand=True)
+            self.entry_frame.pack(side=tkinter.BOTTOM, fill=tkinter.X)
+            self.scroll.pack(side=tkinter.RIGHT, fill=tkinter.Y)
+            self.chat_text.pack(fill=tkinter.BOTH, expand=True)
+            self.chat_entry.focus_set()
+            self.clientchat_thread = threading.Thread(name='clientchat',
+                                                      target=self.clientchat)
+            self.clientchat_thread.start()
+        except Exception:
+            print(traceback.format_exc())
 
         # self.clientchat_thread.join()
+
     # Define a method to update the security code label
     def update_security_code_label(self, new_security_code):
-        self.security_code_label.config(text = new_security_code)
-
+        self.security_code_label.config(text=new_security_code)
 
     def clear_chat_display(self):
         self.chat_text.config(state=tkinter.NORMAL)
@@ -390,7 +389,7 @@ class Application(tkinter.Tk):
 
             self.chat_text.config(state=tkinter.NORMAL)
             self.chat_text.insert(tkinter.END,
-                                  'Waiting for ' + selected_contact + 'to accept request to chat...' + '\n',
+                                  'Waiting for ' + selected_contact + ' to accept request to chat...' + '\n',
                                   ('tag{0}'.format(2)))
             self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
                                       font=self.chat_font)
@@ -405,7 +404,6 @@ class Application(tkinter.Tk):
                                           font=self.chat_font)
                 self.chat_text.config(state=tkinter.DISABLED)
                 self.chat_text.see(tkinter.END)
-
 
     def browse(self):
         self.mmfilename = tkinter.filedialog.askopenfilename()
@@ -445,14 +443,14 @@ class Application(tkinter.Tk):
             binary_data = base64.b64decode(image_data1)
             image_data = BytesIO(binary_data)
             image = Image.open(image_data)
-            
+
             # Resize the image maintaining aspect ratio
             max_width, max_height = 300, 300
             original_width, original_height = image.size
             ratio = min(max_width / original_width, max_height / original_height)
             new_width = int(original_width * ratio)
             new_height = int(original_height * ratio)
-            
+
             # Resize using the appropriate method
             try:
                 from PIL import ImageResampling
@@ -464,7 +462,7 @@ class Application(tkinter.Tk):
             photo = ImageTk.PhotoImage(image)
 
             # Display the image in the sender's chat window
-            self.display_image(image_data1, sender = True)
+            self.display_image(image_data1, sender=True)
 
             # Encrypt and send the image data
             header, cipher = users[contact].encrypt("Image" + image_data1)
@@ -512,7 +510,7 @@ class Application(tkinter.Tk):
 
                         self.conn.send(sender)
                         self.conn.send('msg')
-                        hdr, cph = users[sender].encrypt(sender + ' has accepted your request to chat')
+                        hdr, cph = users[sender].encrypt(self.username + ' has accepted your request to chat')
                         new_security_code = users[sender].get_safety_number()
 
                         self.update_security_code_label(new_security_code)
@@ -545,11 +543,12 @@ class Application(tkinter.Tk):
             except Exception as e:
                 print(traceback.format_exc())
                 continue
+
     def display_text_message(self, sender, message):
         self.chat_text.config(state=tkinter.NORMAL)
         self.chat_text.insert(tkinter.END, sender + ':' + message + '\n', ('tag{0}'.format(2)))
         self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
-                                    font=self.chat_font)
+                                  font=self.chat_font)
         self.chat_text.config(state=tkinter.DISABLED)
         self.chat_text.see(tkinter.END)
 
@@ -565,7 +564,7 @@ class Application(tkinter.Tk):
         ratio = min(max_width / original_width, max_height / original_height)
         new_width = int(original_width * ratio)
         new_height = int(original_height * ratio)
-        
+
         # Resize using the appropriate method
         try:
             from PIL import ImageResampling
@@ -598,7 +597,6 @@ class Application(tkinter.Tk):
         self.chat_text.see(tk.END)
         # Disable editing
         self.chat_text.config(state=tk.DISABLED)
-
 
     def client_quit(self):
 
@@ -633,8 +631,6 @@ class Application(tkinter.Tk):
 
         else:
             pass
-
-
 
 
 if __name__ == '__main__':
