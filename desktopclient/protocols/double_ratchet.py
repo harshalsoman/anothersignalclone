@@ -280,10 +280,12 @@ if __name__ == '__main__':
     hdr3, cph3 = alice.encrypt("I'm in town for a while, we should meet up")
     hdr4, cph4 = alice.encrypt("Do you remember the old park, let's meet there")
 
+    print('Alice> ', bob.decrypt(hdr4, cph4))
+    print('Alice> ', bob.decrypt(hdr3, cph3))
     #
     print('Alice> ', bob.decrypt(hdr2, cph2))
-    print('Alice> ', bob.decrypt(hdr3, cph3))
-    print('Alice> ', bob.decrypt(hdr4, cph4))
+
+
 
     print(bob.safety_number)
     print(alice.safety_number)

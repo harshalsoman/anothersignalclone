@@ -1,26 +1,21 @@
-import time
-import sys
-import socket
-import tkinter
-import traceback
-from tkinter import ttk
-import tkinter.messagebox
-import tkinter.font
-import tkinter.filedialog
-from PIL import ImageTk, Image
-import threading
 import base64
-from protocols.double_ratchet import KeyStore, Ratchet
 import os
 import pickle
-import transport
-import websockets.sync.client
-import requests
+import threading
+import tkinter
 import tkinter as tk
-from tkinter import Label
-from PIL import Image, ImageTk
-import base64
+import tkinter.filedialog
+import tkinter.font
+import tkinter.messagebox
+import traceback
 from io import BytesIO
+from tkinter import ttk
+
+import requests
+import websockets.sync.client
+from PIL import Image, ImageTk
+
+from protocols.double_ratchet import KeyStore, Ratchet
 
 RECV_BUFFER = 10000000
 users = {}
@@ -51,12 +46,10 @@ class Application(tkinter.Tk):
         if os.path.exists(dat_file_path):
             with open(dat_file_path, 'rb') as file:
                 self.bob = pickle.load(file)
-                print("Pickle file exists. Unpickled data:", self.bob)
 
         users_folder_path = "./store/users"
 
         self.load_user_keys(users_folder_path)
-        print(users)
 
         self.title('Yet Another Signal Clone')
 
@@ -123,7 +116,6 @@ class Application(tkinter.Tk):
                                 headers={'Content-Type': 'application/x-www-form-urlencoded'})
             var = var.status_code
             if var == 201:
-                print("Success")
                 self.bob = KeyStore()
                 ltk_pk, spk_pk, otpks = self.bob.get_key_bundle()
                 spk_sig = self.bob.sign_spk()
@@ -187,22 +179,18 @@ class Application(tkinter.Tk):
         var = requests.post(f'http://{ip_address}:8000/authentication',
                             data='username=' + self.name + '&password=' + self.pwd,
                             headers={'Content-Type': 'application/x-www-form-urlencoded'})
-        if var.status_code == 200:
-            print("Successful login")
-        else:
+        if var.status_code != 200:
             print("Failure to login")
             self.launch_client()
         self.flag = 0
         self.conn = websockets.sync.client.connect(f"ws://{ip_address}:9000")
         self.conn.send(self.name)
-        print('sent name to server')
 
         self.title('Yet Another Signal Clone')
         self.should_quit = False
         self.protocol('WM_DELETE_WINDOW', self.client_quit)
         var = requests.get(f'http://{ip_address}:8000/messages/' + self.name,
                            headers={'Content-Type': 'application/json'})
-        print('################################', var.json()['messages'])
 
         for msg in var.json()['messages']:
             if msg['type'] == 'x3dh':
@@ -210,14 +198,11 @@ class Application(tkinter.Tk):
                 content = base64.decodebytes(msg['content'].encode())
                 (sk_bob, msg, ratchet_pub) = self.bob.x3dh_w_header(content[:128], content[128:])
                 if msg == sender + ' is requesting permission to chat':
-                    print("success")
                     users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
-                    print('Ratchet created')
                     self.conn.send(sender)
                     self.conn.send('msg')
                     hdr, cph = users[sender].encrypt(self.name + ' has accepted your request to chat')
                     new_security_code = users[sender].get_safety_number()
-                    print('Security code is:'+ new_security_code)
                     self.update_security_code_label(new_security_code)
                     self.conn.send(hdr)
                     self.conn.send(cph)
@@ -245,7 +230,6 @@ class Application(tkinter.Tk):
                     messages[sender] = []
                 messages[sender].append(users[sender].decrypt(content[:128], content[128:]))
                 new_security_code = users[sender].get_safety_number()
-                print('Security code is:'+ new_security_code)
                 self.update_security_code_label(new_security_code)
 
             var = requests.delete('http://18.223.106.196:8000/messages/' + self.name,
@@ -321,17 +305,6 @@ class Application(tkinter.Tk):
         self.security_code_label.grid(row=0, column=0, sticky=tkinter.W)
 
 
-        # ONLINE USERS#
-        # self.online=[];j=0
-        # for i in self.list_of_active_users:
-        #     # print(i)
-        #     self.enable[i]=tkinter.IntVar()
-        #     # self.enable[i].set(0)
-        #     l=ttk.Label(self.f1,padding=10,text=i,justify=tkinter.LEFT,font=self.font3,foreground='forest green',background='navajo white')
-        #     l.grid(row=j,column=0,sticky=tkinter.W)
-        #     self.online.append(l)
-        #     j=j+1
-
         # CONTACTS#
 
         self.contact_label = [];
@@ -378,10 +351,18 @@ class Application(tkinter.Tk):
     # Define a method to update the security code label
     def update_security_code_label(self, new_security_code):
         self.security_code_label.config(text = new_security_code)
+
+
+    def clear_chat_display(self):
+        self.chat_text.config(state=tkinter.NORMAL)
+        self.chat_text.delete('1.0', tkinter.END)
+
     def handle_contact_selection(self, event):
         selected_contact = self.selected_contact.get()
         if '*' in selected_contact:
             selected_contact = selected_contact[:-2]
+
+        self.clear_chat_display()
 
         if selected_contact not in users:
             var = requests.get(f'http://{ip_address}:8000/keybundle/' + selected_contact,
@@ -401,14 +382,11 @@ class Application(tkinter.Tk):
             (sk_alice, header, cipher, ratchet_pair) = self.bob.x3dh_w_key_bundle(
                 self.name + ' is requesting permission to chat', (ltk, spk, sig, arr))
             users[selected_contact] = Ratchet(sk_alice, ratchet_pair)
-            print('Ratchet generated')
-            print(users.keys())
 
             self.conn.send(selected_contact)
             self.conn.send('x3dh')
             self.conn.send(header)
             self.conn.send(cipher)
-            print('sending ratchet message')
 
             self.chat_text.config(state=tkinter.NORMAL)
             self.chat_text.insert(tkinter.END,
@@ -419,7 +397,6 @@ class Application(tkinter.Tk):
             self.chat_text.config(state=tkinter.DISABLED)
             self.chat_text.see(tkinter.END)
 
-        print(messages)
         if selected_contact in messages:
             for msg in messages[selected_contact]:
                 self.chat_text.config(state=tkinter.NORMAL)
@@ -429,116 +406,22 @@ class Application(tkinter.Tk):
                 self.chat_text.config(state=tkinter.DISABLED)
                 self.chat_text.see(tkinter.END)
 
-    # RECEIVER SELECTION WINDOW
-    def user_selection(self):
-        self.root = tkinter.Toplevel(self)
-        self.root.title("User Selection")
-        frame = tkinter.Frame(self.root)
-        frame1 = tkinter.Frame(frame)
-        label1 = tkinter.Label(frame1, text="Select the users you want to connect to:", compound=tkinter.LEFT,
-                               font=('Helvetica', '20'), justify=tkinter.CENTER)
-        label1.pack(side=tkinter.TOP, fill=tkinter.X)
-        frame1.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=True)
-        frame2 = tkinter.Frame(self.root, borderwidth=10)
-        i = 0
-        for client in self.list_of_active_users:
-            ch = tkinter.Checkbutton(frame2, text=client, variable=self.enable[client], borderwidth=0, pady=10,
-                                     justify=tkinter.LEFT, font=('Courier New', 19), foreground='gray30')
-            ch.grid(column=0, row=i, sticky=tkinter.W)
-            i = i + 1
-        frame3 = tkinter.Frame(frame2, borderwidth=10)
-        b = tkinter.Button(frame3, text="Connect", justify=tkinter.CENTER, font=("Helvetica", '14'), padx=6, pady=6,
-                           command=self.root.withdraw)
-        b.pack()
-        frame3.grid(row=i, column=1, columnspan=2, sticky=tkinter.S)
-        frame2.pack(side=tkinter.BOTTOM, fill=tkinter.BOTH, expand=True)
-        frame.pack(fill=tkinter.BOTH, expand=True)
-
-    # CONTACT ADDITION WINDOW
-    def add_contact(self):
-        self.root = tkinter.Toplevel(self)
-        self.root.title("Contact Addition")
-        label1 = tkinter.Label(self.root, text="Enter the Contact Details:", font=('Helvetica', 20),
-                               justify=tkinter.CENTER, pady=10)
-        label1.grid(row=0, columnspan=2)
-        label2 = tkinter.Label(self.root, text="Username", font=("Courier New", 14), justify=tkinter.RIGHT, pady=15)
-        label2.grid(row=1, column=0)
-        self.contact = tkinter.StringVar()
-        self.contact.set("Type Username")
-        entry1 = tkinter.Entry(self.root, textvariable=self.contact)
-        entry1.grid(row=1, column=1)
-        entry1.bind("<Return>", self.add)
-
-    def add(self, event):
-        if self.contact.get() in self.contacts:
-            tkinter.messagebox.showwarning(title="Contact Exists", message="The Contact already exists")
-            self.root.withdraw()
-        with open("textfiles/contact.txt", "a") as file:
-            file.write(" " + self.contact.get())
-        l = ttk.Label(self.f2, padding=10, text=self.contact.get(), justify=tkinter.LEFT, font=self.font3,
-                      foreground='gray49',
-                      background='ivory2')
-        l.grid(row=self.num_contacts, column=0, sticky=tkinter.W)
-        self.contact_label.append(l)
-        self.contacts.append(self.contact.get())
-        self.num_contacts += 1
-        self.root.withdraw()
-
-    # CONTACT DELETION WINDOW
-    def del_contact(self):
-        self.root = tkinter.Toplevel(self)
-        self.root.title("Contact Deletion")
-        label1 = tkinter.Label(self.root, text="Enter the Contact to be removed:", font=('Helvetica', 20),
-                               justify=tkinter.CENTER, pady=10)
-        label1.grid(row=0, columnspan=2, column=0)
-        label2 = tkinter.Label(self.root, text="Username", font=("Courier New", 14), justify=tkinter.LEFT, pady=15)
-        label2.grid(row=1, column=0)
-        self.remove1 = tkinter.StringVar()
-        self.remove1.set("Type Username")
-        entry1 = tkinter.Entry(self.root, textvariable=self.remove1)
-        entry1.grid(row=1, column=1)
-        entry1.bind("<Return>", self.remove)
-
-    def remove(self, event):
-        try:
-            self.contacts.remove(self.remove1.get())
-        except:
-            print(traceback.format_exc())
-            tkinter.messagebox.showwarning(title="No Contact", message="No such contact exists")
-            self.root.withdraw()
-            return
-        for i in self.contact_label:
-            i.destroy()
-        self.contact_label.clear()
-        j = 0
-        for i in self.contacts:
-            l = ttk.Label(self.f2, padding=10, text=i, justify=tkinter.LEFT, font=self.font3, foreground='gray49',
-                          background='ivory2')
-            l.grid(row=j, column=0, sticky=tkinter.W)
-            self.contact_label.append(l)
-            j = j + 1
-        self.num_contacts = j
-        remove2 = ' '.join(self.contacts)
-        self.root.withdraw()
 
     def browse(self):
         self.mmfilename = tkinter.filedialog.askopenfilename()
         self.multimedia_send()
 
     def send(self, event):
-        print("I am here")
         message = self.chat_entry.get()
         contact = self.selected_contact.get()
         if '*' in contact:
             contact = contact[:-2]
         header, cipher = users[contact].encrypt(message)
         self.update_security_code_label(users[contact].get_safety_number())
-        print('Sending encrypted message')
         self.conn.send(contact)
         self.conn.send('msg')
         self.conn.send(header)
         self.conn.send(cipher)
-        print('Sent encrypted message')
         self.chat_entry.delete(0, tkinter.END)
         self.chat_text.config(state=tkinter.NORMAL)
         self.chat_text.insert(tkinter.END, self.name + ':' + message + '\n', ('tag{0}'.format(1)))
@@ -586,12 +469,10 @@ class Application(tkinter.Tk):
             # Encrypt and send the image data
             header, cipher = users[contact].encrypt("Image" + image_data1)
             self.update_security_code_label(users[contact].get_safety_number())
-            print('Sending encrypted multimedia message')
             self.conn.send(contact)
             self.conn.send('msg')
             self.conn.send(header)
             self.conn.send(cipher)
-            print('Sent encrypted multimedia message')
 
             # Reset mmfilename after sending
             self.mmfilename = None
@@ -603,7 +484,6 @@ class Application(tkinter.Tk):
             try:
                 sender = self.conn.recv()
                 type = self.conn.recv()
-                print('################# sender type #######################', sender, type)
 
                 if sender == 'server' and type == 'add':
                     new_contact = self.conn.recv()
@@ -626,19 +506,15 @@ class Application(tkinter.Tk):
                 elif type == 'x3dh':
                     header = self.conn.recv()
                     cipher = self.conn.recv()
-                    print('############# header cipher #################', header, cipher)
                     (sk_bob, msg, ratchet_pub) = self.bob.x3dh_w_header(header, cipher)
                     if msg == sender + ' is requesting permission to chat':
-                        print("success")
                         users[sender] = Ratchet(sk_bob, dh_pub_key=ratchet_pub)
-                        print('Ratchet created')
 
                         self.conn.send(sender)
                         self.conn.send('msg')
                         hdr, cph = users[sender].encrypt(sender + ' has accepted your request to chat')
                         new_security_code = users[sender].get_safety_number()
 
-                        print('Security code is:'+ new_security_code)
                         self.update_security_code_label(new_security_code)
                         self.conn.send(hdr)
                         self.conn.send(cph)
@@ -647,42 +523,19 @@ class Application(tkinter.Tk):
                 else:
                     header = self.conn.recv()
                     cipher = self.conn.recv()
-                    print('cipher ', cipher)
-                    print('header ', header)
                     msg = users[sender].decrypt(header, cipher)
                     new_security_code = users[sender].get_safety_number()
-                    print('Security code is:' + new_security_code)
                     self.update_security_code_label(new_security_code)
                     contact = self.selected_contact.get()
                     if '*' in contact:
                         contact = contact[:-2]
-                    print('decrypted message ', msg)
-                    print('sender and contact', sender, contact)
-                    print(sender == contact)
                     # Check if the message is an image
 
-                    # if msg.startswith("Image:"):
-                    #     image_data = msg[len("Image:"):]
-                    #     self.display_message(sender, "", image_data)
-                    # else:
-                    #     self.display_message(sender,msg)
                     if sender == contact:
-                        print("BC")
-                        # self.chat_text.config(state=tkinter.NORMAL)
-                        # self.chat_text.insert(tkinter.END, msg + '\n', ('tag{0}'.format(2)))
-                        # self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
-                        #                           font=self.chat_font)
-                        # self.chat_text.config(state=tkinter.DISABLED)
-                        # self.chat_text.see(tkinter.END)
                         if msg.startswith("Image"):
-                            print("THere") # Assuming you prefix image messages with "Image:"
-                            # Extract the image data from the decrypted message
                             image_data = msg[len("Image"):]
-                            # Display the image in the chat_text widget
                             self.display_image(image_data)
                         else:
-                            print("Here")
-                            # Display the text message in the chat_text widget
                             self.display_text_message(sender, msg)
                     else:
                         if sender not in messages.keys():
@@ -693,9 +546,6 @@ class Application(tkinter.Tk):
                 print(traceback.format_exc())
                 continue
     def display_text_message(self, sender, message):
-        # Display text message in the chat_text widget
-        # if sender == self.selected_contact.get():
-        print("inside you")
         self.chat_text.config(state=tkinter.NORMAL)
         self.chat_text.insert(tkinter.END, sender + ':' + message + '\n', ('tag{0}'.format(2)))
         self.chat_text.tag_config('tag{0}'.format(2), justify=tkinter.LEFT, foreground='gray30',
